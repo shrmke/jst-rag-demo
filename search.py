@@ -33,7 +33,8 @@ import urllib.request as _ureq
 import urllib.error as _uerr
 import http.client as _http
 import socket as _sock
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Tuple, Optional
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 try:
     import faiss  # type: ignore
@@ -532,6 +533,7 @@ def route_and_search(
     return_table_full: bool = False,
     output_cap: int = 200,
     prefer_year: bool = True,
+    doc_type_override: Optional[str] = None,  # "report" | "notice" | "both" | None
 ) -> Dict[str, Any]:
     """
     E2E: analyze intent -> select subset of indexes -> retrieve -> rerank -> return results with intent and trace.
@@ -542,11 +544,31 @@ def route_and_search(
     from intent.router import _resolve_indices_by_years  # reuse resolver
     years = intent.years
     dtype = intent.doc_type
-    faiss_dirs = _resolve_indices_by_years(dtype, years) if (prefer_year and years) else []
+    # 覆盖文档类型：report/notice/both
+    if isinstance(doc_type_override, str):
+        if doc_type_override in ("report", "notice"):
+            dtype = doc_type_override
+        elif doc_type_override == "both":
+            dtype = None  # downstream: None 表示两者都包含
+    faiss_dirs: List[str] = _resolve_indices_by_years(dtype, years) if (prefer_year and years) else []
     # compute bm25 dirs for same buckets
     bm25_dirs: List[str] = []
     if dtype:
         bm25_dirs = _bm25_dirs_for(dtype, years if years else [])
+    elif doc_type_override == "both":
+        # 合并两类
+        # FAISS：按年份合并 report/notice 两类子库
+        if prefer_year and years:
+            tmp_faiss: List[str] = []
+            for ty in ("report", "notice"):
+                for d in _resolve_indices_by_years(ty, years):
+                    if d not in tmp_faiss:
+                        tmp_faiss.append(d)
+            faiss_dirs = tmp_faiss
+        for ty in ("report", "notice"):
+            for d in _bm25_dirs_for(ty, years if years else []):
+                if d not in bm25_dirs:
+                    bm25_dirs.append(d)
     # If nothing resolved, fallback to global roots from registry
     if not faiss_dirs and not bm25_dirs:
         # Fallback: try global roots from registry to avoid empty retrieval
@@ -761,6 +783,131 @@ def route_and_search(
         final = final[: output_cap]
     return {"intent": intent.to_dict(), "results": final, "trace": trace.to_dict()}
 
+
+def route_and_search_multiquery_hyde(
+    query: str,
+    # 每路检索 topK，可前端调
+    per_query_topk: int = 5,
+    # Multi-Query/HyDE 开关
+    use_multiquery: bool = True,
+    use_hyde: bool = True,
+    # 是否并行执行多路检索
+    parallel: bool = True,
+    # 其余检索参数（与 route_and_search 对齐，采用合理默认）
+    alpha: float = 0.5,
+    pre_topk: int = 30,
+    faiss_per_index: int = 10,
+    bm25_per_index: int = 50,
+    rerank_topk: int = 10,
+    rerank_instruct: str = "Given a web search query, retrieve relevant passages that answer the query.",
+    neighbor_radius: int = 1,
+    return_table_full: bool = False,
+    output_cap: int = 400,
+    prefer_year: bool = True,
+    doc_type_override: Optional[str] = None,  # "report" | "notice" | "both" | None
+) -> Dict[str, Any]:
+    """
+    针对 原始query + Multi-Query扩展 + HyDE passage 分别独立检索（默认并行），
+    每路取 per_query_topk，最后合并去重后返回。
+    """
+    # 1) 先拿原始意图（用于返回/观测）
+    _intent_pack = route_and_search(
+        query=query,
+        topk=max(1, int(per_query_topk)),
+        alpha=alpha,
+        pre_topk=pre_topk,
+        faiss_per_index=faiss_per_index,
+        bm25_per_index=bm25_per_index,
+        rerank_topk=rerank_topk,
+        rerank_instruct=rerank_instruct,
+        neighbor_radius=neighbor_radius,
+        return_table_full=return_table_full,
+        output_cap=output_cap,
+        prefer_year=prefer_year,
+        doc_type_override=doc_type_override,
+    )
+    base_intent = _intent_pack.get("intent") or {}
+    base_results = _intent_pack.get("results") or []
+
+    # 2) Multi-Query 与 HyDE 文档（延后导入生成函数，避免循环导入问题）
+    expansions: Dict[int, str] = {}
+    hyde_passage: str = ""
+    try:
+        expansions = generate_multi_queries_zh(query) if use_multiquery else {}
+    except Exception:
+        expansions = {}
+    try:
+        hyde_passage = generate_hyde_passage_zh(query) if use_hyde else ""
+    except Exception:
+        hyde_passage = ""
+
+    # 待检索列表：原始query + 扩展 + HyDE（若非空）
+    tasks: List[Tuple[str, str]] = [("orig", query)]
+    for mid, q in expansions.items():
+        if q:
+            tasks.append((f"mq_{mid}", q))
+    if isinstance(hyde_passage, str) and hyde_passage.strip():
+        # HyDE 用虚构段落直接作为查询向量化
+        tasks.append(("hyde", hyde_passage.strip()))
+
+    # 3) 多路检索（并行/串行）
+    per_key_results: Dict[str, List[Dict[str, Any]]] = {}
+
+    def _do_search(qkey: str, qtext: str) -> List[Dict[str, Any]]:
+        try:
+            pack = route_and_search(
+                query=qtext,
+                topk=max(1, int(per_query_topk)),
+                alpha=alpha,
+                pre_topk=pre_topk,
+                faiss_per_index=faiss_per_index,
+                bm25_per_index=bm25_per_index,
+                rerank_topk=rerank_topk,
+                rerank_instruct=rerank_instruct,
+                neighbor_radius=neighbor_radius,
+                return_table_full=return_table_full,
+                output_cap=output_cap,
+                prefer_year=prefer_year,
+                doc_type_override=doc_type_override,
+            )
+            return list(pack.get("results") or [])
+        except Exception:
+            return []
+
+    if parallel and len(tasks) > 1:
+        with ThreadPoolExecutor(max_workers=min(8, len(tasks))) as ex:
+            futs = {ex.submit(_do_search, key, text): key for key, text in tasks}
+            for fut in as_completed(futs):
+                key = futs[fut]
+                try:
+                    per_key_results[key] = fut.result()
+                except Exception:
+                    per_key_results[key] = []
+    else:
+        for key, text in tasks:
+            per_key_results[key] = _do_search(key, text)
+
+    # 4) 合并去重（按 id 去重，保持各路顺序，优先原始query）
+    merged: List[Dict[str, Any]] = []
+    seen_ids: set[str] = set()
+    order_keys = ["orig"] + [k for k, _ in tasks if k.startswith("mq_")] + (["hyde"] if "hyde" in per_key_results else [])
+    for k in order_keys:
+        for item in per_key_results.get(k, []):
+            mid = str(item.get("id"))
+            if mid in seen_ids:
+                continue
+            seen_ids.add(mid)
+            merged.append(item)
+
+    return {
+        "intent": base_intent,
+        "expansions": expansions,  # {方法编号: 扩展后的单条查询}
+        "hyde_passage": hyde_passage,
+        "per_query_results": per_key_results,
+        "merged_results": merged,
+        "base_results": base_results,
+    }
+
 def _truncate_text(s: str, limit: int) -> str:
     if not isinstance(s, str):
         return ""
@@ -874,6 +1021,100 @@ def call_chat_completion(messages: List[Dict[str, Any]], model: str, temperature
         return str(content)
     except Exception:
         return json.dumps(obj, ensure_ascii=False)
+
+
+# ---------------- Multi-Query 与 HyDE 生成（中文优化版） ----------------
+_MQ_INSTRUCTIONS: Dict[int, str] = {
+    1: (
+        "在年度报告与财务报表的语境下，用同义词或相关术语替换关键术语，保持原意一致。"
+        "输出1条改写查询，必须仅输出并用尖括号<>包裹，不要添加任何解释或多余字符。"
+    ),
+    2: (
+        "在年度报告与财务报表的语境下，引入更宽泛或更具体的相关词（上位词/下位词），保持查询意图不变。"
+        "输出1条改写查询，必须仅输出并用尖括号<>包裹，不要添加任何解释或多余字符。"
+    ),
+    3: (
+        "在年度报告与财务报表的语境下，将该问题改写为一条保持相同意图的释义。"
+        "输出1条改写查询，必须仅输出并用尖括号<>包裹，不要添加任何解释或多余字符。"
+    ),
+}
+
+
+def _extract_angle_brackets(text: str) -> Optional[str]:
+    """解析形如 <...> 的单条查询；若无则返回 None。"""
+    if not isinstance(text, str):
+        return None
+    m = re.search(r"<\s*(.+?)\s*>", text, flags=re.DOTALL)
+    if not m:
+        return None
+    q = m.group(1).strip()
+    # 清理潜在的首尾引号或多余空格
+    q = re.sub(r'^[\"“”\'`]+|[\"“”\'`]+$', "", q).strip()
+    return q or None
+
+
+def generate_multi_queries_zh(
+    query: str,
+    methods: List[int] = [1, 2, 3],
+    model: str = QWEN_CHAT_MODEL,
+) -> Dict[int, str]:
+    """生成多路中文扩展查询：每种方法返回1条。严格要求仅输出 `<...>`。"""
+    out: Dict[int, str] = {}
+    for mid in methods:
+        instr = _MQ_INSTRUCTIONS.get(mid)
+        if not instr:
+            continue
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "你是一名中文金融检索提示词优化器。"
+                    "请严格遵守输出格式：只输出一条查询，并使用尖括号<>包裹，不得添加任何其他说明、编号或标点。"
+                    "语境限定在上市公司年度报告、定期报告、财务报表与相关公告。"
+                ),
+            },
+            {
+                "role": "user",
+                "content": f"{instr}\n原问题：{query}",
+            },
+        ]
+        try:
+            resp = call_chat_completion(messages, model=model, temperature=0.2, max_tokens=128)
+        except Exception:
+            resp = ""
+        parsed = _extract_angle_brackets(resp)
+        if parsed:
+            out[mid] = parsed
+    return out
+
+
+_HYDE_SYSTEM_ZH = (
+    "你是一名富有创造力的报告写作者。"
+    "当被问到问题时，你的任务不是检索实时或真实的财务数据，"
+    "而是以“编造、整合或模拟”的方式，撰写一段有助于回答问题的段落、分析或新闻风格报道。"
+    "即使问题要求真实数值或不可用的信息，也应生成连贯且语境相关的叙事内容，"
+    "而不是以无数据为由进行拒绝或免责声明。"
+    "目标：产出一篇文风成熟的作品（如报道、分析或评论），读起来仿佛出自报刊、杂志或研究评论。"
+)
+
+
+def generate_hyde_passage_zh(
+    query: str,
+    model: str = QWEN_CHAT_MODEL,
+) -> str:
+    """生成 HyDE 虚构段落（中文）。"""
+    messages = [
+        {"role": "system", "content": _HYDE_SYSTEM_ZH},
+        {
+            "role": "user",
+            "content": f"请以资讯报道/分析评论/研究解读的叙事方式，写一段完整且信息量足的文字来回应此问题：{query}",
+        },
+    ]
+    try:
+        resp = call_chat_completion(messages, model=model, temperature=0.7, max_tokens=640)
+        return str(resp).strip()
+    except Exception:
+        return ""
 
 
 def parse_args(argv: List[str]) -> argparse.Namespace:

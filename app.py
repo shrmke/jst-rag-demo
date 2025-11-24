@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional
 import streamlit as st
 
 from search import route_and_search as route_and_search_e2e
+from search import route_and_search_multiquery_hyde as route_and_search_mq_hyde
 
 SEARCH_PY = "/home/wangyaqi/jst/search.py"
 DEFAULT_FAISS_FIN = "/home/wangyaqi/jst/金盘财报_indexes/faiss_exp"
@@ -106,8 +107,9 @@ def run_search(cmd: List[str]) -> Dict[str, Any]:
     return last_json
 
 
-def render_results(results: List[Dict[str, Any]]) -> None:
-    st.subheader("检索结果")
+def render_results(results: List[Dict[str, Any]], show_header: bool = True) -> None:
+    if show_header:
+        st.subheader("检索结果")
     if not results:
         st.info("未检索到结果")
         return
@@ -251,6 +253,27 @@ def main():
     neighbor_radius = st.sidebar.number_input("返回上下相邻 chunk 半径", min_value=0, max_value=5, value=1, step=1)
     return_table_full = st.sidebar.checkbox("命中表格返回整表", value=True)
 
+    st.sidebar.header("文档类型指定")
+    doc_type_choice = st.sidebar.selectbox(
+        "若不指定则自动识别",
+        options=["自动识别", "仅财报", "仅公告", "财报+公告"],
+        index=0,
+    )
+    doc_type_override = None
+    if doc_type_choice == "仅财报":
+        doc_type_override = "report"
+    elif doc_type_choice == "仅公告":
+        doc_type_override = "notice"
+    elif doc_type_choice == "财报+公告":
+        doc_type_override = "both"
+
+    st.sidebar.header("Multi-Query / HyDE")
+    use_mq_hyde = st.sidebar.checkbox("启用 Multi-Query + HyDE", value=True)
+    per_query_topk = st.sidebar.number_input("每路 topK（per_query_topk）", min_value=1, max_value=50, value=5, step=1)
+    use_multiquery = st.sidebar.checkbox("使用 Multi-Query", value=True)
+    use_hyde = st.sidebar.checkbox("使用 HyDE", value=True)
+    mq_parallel = st.sidebar.checkbox("多路检索并行执行", value=True)
+
     st.sidebar.header("回答参数")
     gen_answer = st.sidebar.checkbox("生成回答", value=True)
     answer_topk = st.sidebar.number_input("用于回答的TopK条数", min_value=1, max_value=50, value=10, step=1)
@@ -276,64 +299,149 @@ def main():
             # 直接调用 e2e 路由检索
             with st.status("意图识别与路由检索中…", expanded=False) as status:
                 try:
-                    data = route_and_search_e2e(
-                        query=query.strip(),
-                        topk=int(answer_topk),  # 取回答用 topk 作为主检索 topk
-                        alpha=float(alpha),
-                        pre_topk=int(pre_topk),
-                        faiss_per_index=int(faiss_per_index),
-                        bm25_per_index=int(bm25_per_index),
-                        rerank_topk=int(rerank_topk),
-                        neighbor_radius=int(neighbor_radius),
-                        return_table_full=bool(return_table_full),
-                        output_cap=200,
-                        prefer_year=True,
-                    )
+                    if use_mq_hyde:
+                        # 使用 multi-query + HyDE 的并行检索
+                        data = route_and_search_mq_hyde(
+                            query=query.strip(),
+                            per_query_topk=int(per_query_topk),
+                            use_multiquery=bool(use_multiquery),
+                            use_hyde=bool(use_hyde),
+                            parallel=bool(mq_parallel),
+                            alpha=float(alpha),
+                            pre_topk=int(pre_topk),
+                            faiss_per_index=int(faiss_per_index),
+                            bm25_per_index=int(bm25_per_index),
+                            rerank_topk=int(rerank_topk),
+                            neighbor_radius=int(neighbor_radius),
+                            return_table_full=bool(return_table_full),
+                            output_cap=400,
+                            prefer_year=True,
+                            doc_type_override=doc_type_override,
+                        )
+                    else:
+                        data = route_and_search_e2e(
+                            query=query.strip(),
+                            topk=int(answer_topk),  # 取回答用 topk 作为主检索 topk
+                            alpha=float(alpha),
+                            pre_topk=int(pre_topk),
+                            faiss_per_index=int(faiss_per_index),
+                            bm25_per_index=int(bm25_per_index),
+                            rerank_topk=int(rerank_topk),
+                            neighbor_radius=int(neighbor_radius),
+                            return_table_full=bool(return_table_full),
+                            output_cap=200,
+                            prefer_year=True,
+                            doc_type_override=doc_type_override,
+                        )
                     status.update(label="完成", state="complete", expanded=False)
                 except Exception as e:
                     status.update(label="失败", state="error", expanded=True)
                     st.error(str(e))
                     return
-            # 展示意图与过程
-            intent = (data or {}).get("intent") or {}
-            trace = (data or {}).get("trace") or {}
-            with st.expander("意图识别结果", expanded=True):
-                st.json(intent)
-            render_trace(trace, intent=intent)
-            # 结果与可选回答
-            results = (data or {}).get("results") or []
-            if gen_answer:
-                used = results[: max(1, int(answer_topk))]
-                from search import build_answer_messages, call_chat_completion, QWEN_CHAT_MODEL
-                messages = build_answer_messages(
-                    query=query.strip(),
-                    contexts=used,
-                    system_prompt=st.session_state.get("answer_system", "你是严谨的中文金融助理。基于给定检索片段回答，若无法确定，请明确说明。引用用 [编号] 标注。"),
-                    per_chunk_limit=int(answer_max_chars),
-                    include_full_table=True,
-                )
-                chat_model = (answer_model.strip() or None) or QWEN_CHAT_MODEL
-                ans = call_chat_completion(
-                    messages=messages,
-                    model=chat_model,
-                    temperature=float(answer_temperature),
-                    max_tokens=int(answer_max_tokens),
-                )
-                # 将 used 组装为 sources
-                sources = []
-                for i, it in enumerate(used, start=1):
-                    sources.append({
-                        "ref": i,
-                        "id": it.get("id"),
-                        "doc_id": it.get("doc_id"),
-                        "page": it.get("page"),
-                        "type": it.get("type"),
-                        "order": it.get("order"),
-                        "content": it.get("content"),
-                        "index_dir": it.get("index_dir"),
-                        "source_file": it.get("source_file"),
-                    })
-                render_answer(ans, sources)
+            # 展示结果
+            if use_mq_hyde:
+                # 展示意图
+                intent = (data or {}).get("intent") or {}
+                with st.expander("意图识别结果", expanded=True):
+                    st.json(intent)
+                # 展示 Multi-Query 与 HyDE
+                st.subheader("扩展查询（Multi-Query）")
+                expansions = (data or {}).get("expansions") or {}
+                if expansions:
+                    for k in sorted(expansions.keys()):
+                        st.markdown(f"- 方法 {k}")
+                        st.code(str(expansions.get(k) or ""), language=None)
+                else:
+                    st.caption("无扩展查询或已关闭。")
+                st.subheader("HyDE 模拟文档")
+                hyde_text = (data or {}).get("hyde_passage") or ""
+                if isinstance(hyde_text, str) and hyde_text.strip():
+                    st.code(hyde_text.strip(), language=None)
+                else:
+                    st.caption("未生成 HyDE 文档或已关闭。")
+                # 分路检索结果
+                st.subheader("分路检索结果（原始/扩展/HyDE）")
+                per_results = (data or {}).get("per_query_results") or {}
+                if per_results:
+                    for key in per_results.keys():
+                        items = per_results.get(key) or []
+                        with st.expander(f"{key}（{len(items)}）", expanded=False):
+                            render_results(items, show_header=False)
+                # 合并结果
+                merged = (data or {}).get("merged_results") or []
+                with st.expander(f"检索结果（合并去重后，{len(merged)} 条）", expanded=False):
+                    render_results(merged, show_header=False)
+                # 生成回答（用合并结果）
+                if gen_answer:
+                    used = (merged or [])[: max(1, int(answer_topk))]
+                    from search import build_answer_messages, call_chat_completion, QWEN_CHAT_MODEL
+                    messages = build_answer_messages(
+                        query=query.strip(),
+                        contexts=used,
+                        system_prompt=st.session_state.get("answer_system", "你是严谨的中文金融助理。基于给定检索片段回答，若无法确定，请明确说明。引用用 [编号] 标注。"),
+                        per_chunk_limit=int(answer_max_chars),
+                        include_full_table=True,
+                    )
+                    chat_model = (answer_model.strip() or None) or QWEN_CHAT_MODEL
+                    ans = call_chat_completion(
+                        messages=messages,
+                        model=chat_model,
+                        temperature=float(answer_temperature),
+                        max_tokens=int(answer_max_tokens),
+                    )
+                    sources = []
+                    for i, it in enumerate(used, start=1):
+                        sources.append({
+                            "ref": i,
+                            "id": it.get("id"),
+                            "doc_id": it.get("doc_id"),
+                            "page": it.get("page"),
+                            "type": it.get("type"),
+                            "order": it.get("order"),
+                            "content": it.get("content"),
+                            "index_dir": it.get("index_dir"),
+                            "source_file": it.get("source_file"),
+                        })
+                    render_answer(ans, sources)
+            else:
+                # 原有 e2e 展示路径
+                intent = (data or {}).get("intent") or {}
+                trace = (data or {}).get("trace") or {}
+                with st.expander("意图识别结果", expanded=True):
+                    st.json(intent)
+                render_trace(trace, intent=intent)
+                results = (data or {}).get("results") or []
+                if gen_answer:
+                    used = results[: max(1, int(answer_topk))]
+                    from search import build_answer_messages, call_chat_completion, QWEN_CHAT_MODEL
+                    messages = build_answer_messages(
+                        query=query.strip(),
+                        contexts=used,
+                        system_prompt=st.session_state.get("answer_system", "你是严谨的中文金融助理。基于给定检索片段回答，若无法确定，请明确说明。引用用 [编号] 标注。"),
+                        per_chunk_limit=int(answer_max_chars),
+                        include_full_table=True,
+                    )
+                    chat_model = (answer_model.strip() or None) or QWEN_CHAT_MODEL
+                    ans = call_chat_completion(
+                        messages=messages,
+                        model=chat_model,
+                        temperature=float(answer_temperature),
+                        max_tokens=int(answer_max_tokens),
+                    )
+                    sources = []
+                    for i, it in enumerate(used, start=1):
+                        sources.append({
+                            "ref": i,
+                            "id": it.get("id"),
+                            "doc_id": it.get("doc_id"),
+                            "page": it.get("page"),
+                            "type": it.get("type"),
+                            "order": it.get("order"),
+                            "content": it.get("content"),
+                            "index_dir": it.get("index_dir"),
+                            "source_file": it.get("source_file"),
+                        })
+                    render_answer(ans, sources)
         else:
             # 保留原命令行分支
             cmd = build_cmd(

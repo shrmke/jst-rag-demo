@@ -35,13 +35,7 @@ python3 /home/wangyaqi/jst/search.py \
   --bm25-dir  /home/wangyaqi/jst/indexes/bm25_exp \
   --query "募投项目 调整后金额" --topk 10
 
-# 对照组（支持混合检索，alpha 越大 BM25 权重越高）
-python3 /home/wangyaqi/jst/search.py \
-  --variant ctrl \
-  --faiss-dir /home/wangyaqi/jst/indexes/faiss_ctrl \
-  --bm25-dir  /home/wangyaqi/jst/indexes/bm25_ctrl \
-  --query "可转债 转股价格" --topk 10 --alpha 0.3
-```
+
 
 输出与目录结构
 - FAISS 目录：`faiss.index` + `meta.jsonl`（与向量一一对应）
@@ -67,6 +61,14 @@ rag框架
 
 问题拆解：复杂问题拆解成多个独立问题独立检索
 
+-先对文件进行年份分类
+命令：
+python3 -m registry.build_from_indexes \
+    --faiss-root /home/wangyaqi/jst/金盘财报_indexes/faiss_exp \
+    --faiss-root /home/wangyaqi/jst/金盘上市公告_indexes/faiss_exp \
+    --bm25-root  /home/wangyaqi/jst/金盘财报_indexes/bm25_exp \
+    --bm25-root  /home/wangyaqi/jst/金盘上市公告_indexes/bm25_exp \
+    --out-dir /home/wangyaqi/jst/registry
 
 1.ocr
 模型：新mineru
@@ -85,33 +87,32 @@ type类型：text,table,page_number,image,list,equation,header
 输入：金盘上市公告_mineru解析
 输出：金盘上市公告_table2text
 命令：python /home/wangyaqi/jst/textify_tables.py "/home/wangyaqi/jst/金盘公告_mineru解析"
-两三天
+
 
 财报类：
 对公告类类似，但是在表格中用大模型注入时间
 输入：金盘财报_mineru解析
 输出：金盘财报_table2text
 命令：python /home/wangyaqi/jst/textify_tables_llm.py "/home/wangyaqi/jst/金盘财报_mineru解析"
-对比组：不做任何处理
+
 
 3.chunking
 实验组：
 对text类型，进行固定长度切分；去掉header类型；对table类型，按table2text进行行级切分；
 财报：python /home/wangyaqi/jst/chunk_content.py "/home/wangyaqi/jst/金盘财报_table2text" --mode exp --out-dir "/home/wangyaqi/jst/金盘财报_chunks"
 公告：python /home/wangyaqi/jst/chunk_content.py "/home/wangyaqi/jst/金盘上市 公告_table2text" --mode exp --out-dir "/home/wangyaqi/jst/金盘上市公告_chunks"
-对比组：
-进行固定长度切分，同时保留元素完整（要考虑到过长的table），如果加上next unit则大于maxlen，那么舍弃next unit，保证每个chunk都小于等于maxlen
-（不要对比组了）
+
 
 
 4.embedding
 模型：找现在比较好的模型
 
 5.retrieve
-问题：如何分类，如何意图识别？要根据公司名分，但一个公司内按什么分？按年份分我觉得不太合适，2018年的数据极有可能也会出现在2019年的报表上
-vector retrieve
+问题：如何分类，如何意图识别？
+embedding
 bm25
 reranking
+在现有框架中增加multi-query和hyde，但效果不理想
 
 命令：
 python3 /home/wangyaqi/jst/search.py   --kb 财报   --query "2021年第一季度公司总资产是多少？"   --pre-topk 30   --rerank-topk 10   --faiss-per-index 10   --bm25-per-index 50   --alpha 0.5   --neighbor-radius 1   --return-table-full
