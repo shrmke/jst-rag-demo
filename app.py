@@ -134,35 +134,38 @@ def render_trace(trace: Dict[str, Any], intent: Optional[Dict[str, Any]] = None)
     if not isinstance(trace, dict):
         st.info("无 trace 数据")
         return
-    # 进度条（外层：子问题；内层：年份）
-    subq_total = 1
-    year_total = 0
-    if isinstance(intent, dict):
-        subq_total = max(1, len(intent.get("sub_questions") or []))
-        years = intent.get("years") or []
-        year_total = len(years)
-    with st.container():
-        st.caption("进度（外层：子问题；内层：年份）")
-        outer = st.progress(1.0 if subq_total == 0 else 1.0)  # 同步渲染，已完成
-        inner = st.progress(1.0 if year_total == 0 else 1.0)   # 同步渲染，已完成
-        st.caption(f"子问题：{subq_total} / {subq_total}，年份：{year_total} / {year_total}")
-    # 阶段时间线
+
+    # 显示步骤进度
     stages = trace.get("stages") or []
-    for i, s in enumerate(stages, start=1):
-        name = s.get("name")
-        dur = s.get("duration_ms")
-        with st.expander(f"[{i}] {name} ({dur} ms)"):
-            s_show = dict(s)
-            tokens = s_show.pop("tokens", None)
-            if s_show:
-                st.json(s_show)
-            if isinstance(tokens, dict):
-                st.caption("Tokens")
-                st.json(tokens)
-    totals = trace.get("totals") or {}
-    if totals:
-        st.caption("Totals")
-        st.json(totals)
+    total_stages = len(stages)
+    if total_stages > 0:
+        st.caption(f"总共 {total_stages} 个步骤")
+
+        # 显示每个步骤的进度
+        for i, s in enumerate(stages, start=1):
+            name = s.get("name")
+            dur = s.get("duration_ms")
+            # 根据步骤名给出中文描述
+            step_descriptions = {
+                "rules.detect_complexity": "检测查询复杂度",
+                "rules.classify_doc_type": "识别文档类型",
+                "intent.finalize": "完成意图整合"
+            }
+            desc = step_descriptions.get(name, name)
+            with st.expander(f"[{i}/{total_stages}] {desc} ({dur} ms)"):
+                s_show = dict(s)
+                tokens = s_show.pop("tokens", None)
+                if s_show:
+                    st.json(s_show)
+                if isinstance(tokens, dict):
+                    st.caption("Tokens")
+                    st.json(tokens)
+
+        # 显示总耗时
+        totals = trace.get("totals") or {}
+        if totals:
+            st.caption("总体统计")
+            st.json(totals)
 
 
 def render_answer(answer: str, sources: List[Dict[str, Any]]) -> None:

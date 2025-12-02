@@ -48,6 +48,9 @@ python3 /home/wangyaqi/jst/search.py \
 cd /home/wangyaqi
 source venv/bin/activate
 
+启动前端服务：
+streamlit run app.py --server.address 0.0.0.0 --server.port 8866
+
 原pdf：861
 解析后：853
 原因暂未查看

@@ -60,52 +60,47 @@ def analyze_intent(
     r_type, r_conf = classify_doc_type(text)
     trace.end_stage("rules.classify_doc_type", t0, {"doc_type": r_type, "conf": r_conf})
 
-    # rules: years/quarters
-    t0 = trace.begin_stage("rules.extract_years")
-    yext = extract_years_and_quarters(text)
-    trace.end_stage("rules.extract_years", t0, yext)
-
-    # init from rules
+    # init from rules (years and quarters already extracted in detect_complexity_and_split)
     is_complex = bool(rules_ext.get("is_complex"))
     rewrite = str(rules_ext.get("rewrite") or text)
     subqs_rules = rules_ext.get("sub_questions") or []
-    years = yext.get("years") or rules_ext.get("years") or []
-    quarters = yext.get("quarters") or rules_ext.get("quarters") or []
+    years = rules_ext.get("years") or []
+    quarters = rules_ext.get("quarters") or []
     doc_type = r_type if r_type != "unknown" else None
     confidence = float(r_conf or 0.0)
 
-    # LLM enhancement
-    if use_llm:
-        t0 = trace.begin_stage("llm.rewrite_and_split")
-        out = llm_rewrite_and_split(text, caller=llm_caller)
-        rewrite = out.get("rewrite", rewrite) or rewrite
-        llm_subqs = out.get("subqs", []) or []
-        trace.end_stage(
-            "llm.rewrite_and_split",
-            t0,
-            {"rewrite": rewrite, "subqs": llm_subqs},
-            tokens=TokenStats.from_dict(out.get("tokens") or {}),
-        )
-        # merge sub-questions: prefer LLM if produced
-        if llm_subqs:
-            subqs_rules = llm_subqs
+    # LLM enhancement - temporarily disabled
+    # if use_llm:
+    #     t0 = trace.begin_stage("llm.rewrite_and_split")
+    #     out = llm_rewrite_and_split(text, caller=llm_caller)
+    #     rewrite = out.get("rewrite", rewrite) or rewrite
+    #     llm_subqs = out.get("subqs", []) or []
+    #     trace.end_stage(
+    #         "llm.rewrite_and_split",
+    #         t0,
+    #         {"rewrite": rewrite, "subqs": llm_subqs},
+    #         tokens=TokenStats.from_dict(out.get("tokens") or {}),
+    #     )
+    #     # merge sub-questions: prefer LLM if produced
+    #     if llm_subqs:
+    #         subqs_rules = llm_subqs
 
-        # LLM type disambiguation if rules unclear
-        need_type_llm = (doc_type is None) or (confidence < 0.6)
-        if need_type_llm:
-            t0 = trace.begin_stage("llm.type_disambiguation")
-            tout = llm_type_disambiguation(text, caller=llm_caller)
-            t_type = tout.get("type", "unknown")
-            t_prob = float(tout.get("prob", 0.0))
-            trace.end_stage(
-                "llm.type_disambiguation",
-                t0,
-                {"type": t_type, "prob": t_prob},
-                tokens=TokenStats.from_dict(tout.get("tokens") or {}),
-            )
-            if t_type in {"report", "notice"} and t_prob >= confidence:
-                doc_type = t_type
-                confidence = t_prob
+    #     # LLM type disambiguation if rules unclear
+    #     need_type_llm = (doc_type is None) or (confidence < 0.6)
+    #     if need_type_llm:
+    #         t0 = trace.begin_stage("llm.type_disambiguation")
+    #         tout = llm_type_disambiguation(text, caller=llm_caller)
+    #         t_type = tout.get("type", "unknown")
+    #         t_prob = float(tout.get("prob", 0.0))
+    #         trace.end_stage(
+    #             "llm.type_disambiguation",
+    #             t0,
+    #             {"type": t_type, "prob": t_prob},
+    #             tokens=TokenStats.from_dict(tout.get("tokens") or {}),
+    #         )
+    #         if t_type in {"report", "notice"} and t_prob >= confidence:
+    #             doc_type = t_type
+    #             confidence = t_prob
 
     # finalize sub_questions objects
     sub_questions: List[SubQuestion] = []
@@ -141,7 +136,7 @@ def analyze_intent(
             "is_complex": final_is_complex,
             "sources": {
                 "rules_is_complex": bool(rules_ext.get("is_complex")),
-                "llm_sub_questions": len(sub_questions),
+                "rules_sub_questions": len(sub_questions),
             },
         },
     )

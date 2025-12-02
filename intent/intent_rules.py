@@ -201,21 +201,11 @@ def detect_complexity_and_split(text: str, current_year: Optional[int] = None) -
     token_hits = sum(1 for t in COMPLEX_TOKENS if t in text)
     is_complex = token_hits > 0 or len(years) > 1
 
+    # No sub-questions generation for now
     sub_questions: List[Dict[str, Any]] = []
-    # If multiple years detected but not too many, create per-year sub-questions
-    if 2 <= len(years) <= 6:
-        for y in years:
-            sub_questions.append({"text": f"{text}（聚焦{y}年）", "years": [y]})
-    else:
-        # If '近N年' present, generate last up to 3 sub-questions for clarity
-        if ext["n_recent"]:
-            n = min(3, ext["n_recent"])
-            ys = sorted(set(years))[-n:]
-            for y in ys:
-                sub_questions.append({"text": f"{text}（近年明细：{y}）", "years": [y]})
 
     return {
-        "is_complex": is_complex if sub_questions else (len(years) > 1),
+        "is_complex": is_complex,
         "rewrite": rewrite,
         "sub_questions": sub_questions,
         "years": years,

@@ -924,6 +924,7 @@ def build_answer_messages(
     system_prompt: str,
     per_chunk_limit: int,
     include_full_table: bool = False,
+    max_total_length: int = 120000,  # API限制129024，留余量
 ) -> List[Dict[str, Any]]:
     # 拼装中文回答指令，包含引用片段
     lines: List[str] = []
@@ -976,14 +977,22 @@ def build_answer_messages(
             tag = f"[{i}] doc={doc_id} page={page} type={typ}".strip()
             lines.append(f"{tag}\n{content}")
     ctx_block = "\n\n".join(lines)
-    user_prompt = (
-        f"请基于下列检索到的材料回答问题，确保用中文作答，并尽量引用关键数字或表述。\n"
-        f"问题：{query}\n\n"
-        f"材料：\n{ctx_block}\n\n"
-        f"要求：\n"
-        f"- 优先使用材料中的事实；若无法确定，请明确说明无法从材料中确定。\n"
-        f"- 简洁作答，必要时给出要点列表。\n"
-    )
+    
+    # 构建user_prompt的固定部分（用于估算长度）
+    prompt_prefix = "请基于下列检索到的材料回答问题，确保用中文作答，并尽量引用关键数字或表述。\n"
+    prompt_suffix = "\n\n要求：\n- 优先使用材料中的事实；若无法确定，请明确说明无法从材料中确定。\n- 简洁作答，必要时给出要点列表。\n"
+    prompt_query_part = f"问题：{query}\n\n材料：\n"
+    
+    # 计算可用长度
+    fixed_length = len(system_prompt) + len(prompt_prefix) + len(prompt_suffix) + len(prompt_query_part)
+    available_length = max_total_length - fixed_length - 1000  # 再留1000字符余量
+    
+    # 如果材料部分超过可用长度，进行截断
+    if len(ctx_block) > available_length:
+        ctx_block = ctx_block[:available_length - 100] + "\n\n[内容已截断，部分材料因长度限制未包含...]"
+    
+    user_prompt = prompt_prefix + prompt_query_part + ctx_block + prompt_suffix
+    
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_prompt},
