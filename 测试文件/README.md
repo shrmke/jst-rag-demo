@@ -75,3 +75,16 @@ v2:
 ✅ BM25权重α: 0.5
 ✅ 命中表格返回整表: 开启
 ✅ Multi-Query/HyDE: 关闭
+
+v3:
+相比v2去掉了query中的“\n”
+测试参数配置：
+✅ BM25+Embedding预选: pre_topk=30
+✅ 重排返回: rerank_topk=30
+✅ 每子库向量检索: topK=50
+✅ 每子库BM25检索: topK=50
+✅ 邻近chunk半径: 1
+✅ 用于回答的TopK: 30
+✅ BM25权重α: 0.5
+✅ 命中表格返回整表: 开启
+✅ Multi-Query/HyDE: 关闭

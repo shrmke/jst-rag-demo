@@ -301,7 +301,6 @@ def search(
     rerank_instruct: str,
     neighbor_radius: int,
     return_table_full: bool,
-    output_cap: int,
 ) -> List[Dict[str, Any]]:
     # Detect whether provided dirs are single-index or roots containing sub-indexes
     faiss_dirs: List[str] = []
@@ -461,44 +460,44 @@ def search(
                             added_ids.add(mid)
                             break
 
-    if return_table_full:
-        metas_cache: Dict[str, List[Dict[str, Any]]] = {}
-        for item in list(final):
-            mtab = item.get("table") or {}
-            table_id = mtab.get("id") if isinstance(mtab, dict) else None
-            if not table_id:
-                continue
-            d = item["index_dir"]
-            if d not in metas_cache:
-                metas_cache[d] = load_dir_meta(d)
-            metas = metas_cache[d]
-            for m in metas:
-                t = m.get("table") or {}
-                if isinstance(t, dict) and t.get("id") == table_id:
-                    mid = str(m.get("id"))
-                    if mid in added_ids:
-                        continue
-                    final.append({
-                        "rerank_score": float(item["rerank_score"]),
-                        "modal": "table",
-                        "id": m.get("id"),
-                        "doc_id": m.get("doc_id"),
-                        "page": m.get("page"),
-                        "type": m.get("type"),
-                        "order": m.get("order"),
-                        "content": m.get("raw_content") or m.get("embed_text"),
-                        "table": m.get("table"),
-                        "meta": m.get("meta"),
-                        "source_file": m.get("source_file"),
-                        "index_dir": d,
-                        "is_full_table": True,
-                        "table_id": table_id,
-                    })
-                    added_ids.add(mid)
+    # if return_table_full:
+    #     metas_cache: Dict[str, List[Dict[str, Any]]] = {}
+    #     for item in list(final):
+    #         mtab = item.get("table") or {}
+    #         table_id = mtab.get("id") if isinstance(mtab, dict) else None
+    #         if not table_id:
+    #             continue
+    #         d = item["index_dir"]
+    #         if d not in metas_cache:
+    #             metas_cache[d] = load_dir_meta(d)
+    #         metas = metas_cache[d]
+    #         for m in metas:
+    #             t = m.get("table") or {}
+    #             if isinstance(t, dict) and t.get("id") == table_id:
+    #                 mid = str(m.get("id"))
+    #                 if mid in added_ids:
+    #                     continue
+    #                 final.append({
+    #                     "rerank_score": float(item["rerank_score"]),
+    #                     "modal": "table",
+    #                     "id": m.get("id"),
+    #                     "doc_id": m.get("doc_id"),
+    #                     "page": m.get("page"),
+    #                     "type": m.get("type"),
+    #                     "order": m.get("order"),
+    #                     "content": m.get("raw_content") or m.get("embed_text"),
+    #                     "table": m.get("table"),
+    #                     "meta": m.get("meta"),
+    #                     "source_file": m.get("source_file"),
+    #                     "index_dir": d,
+    #                     "is_full_table": True,
+    #                     "table_id": table_id,
+    #                 })
+    #                 added_ids.add(mid)
 
     # cap outputs to avoid explosion
-    if len(final) > output_cap:
-        final = final[: output_cap]
+    # if len(final) > output_cap:
+    #     final = final[: output_cap]
     return final
 
 
@@ -531,7 +530,6 @@ def route_and_search(
     rerank_instruct: str = "Given a web search query, retrieve relevant passages that answer the query.",
     neighbor_radius: int = 1,
     return_table_full: bool = False,
-    output_cap: int = 200,
     prefer_year: bool = True,
     doc_type_override: Optional[str] = None,  # "report" | "notice" | "both" | None
 ) -> Dict[str, Any]:
@@ -744,43 +742,43 @@ def route_and_search(
                             })
                             added_ids.add(mid)
                             break
-    if return_table_full:
-        metas_cache: Dict[str, List[Dict[str, Any]]] = {}
-        added_ids = set([str(x["id"]) for x in final])
-        for item in list(final):
-            mtab = item.get("table") or {}
-            table_id = mtab.get("id") if isinstance(mtab, dict) else None
-            if not table_id:
-                continue
-            d = item["index_dir"]
-            if d not in metas_cache:
-                metas_cache[d] = load_meta(os.path.join(d, "meta.jsonl"))
-            metas = metas_cache[d]
-            for m in metas:
-                t = m.get("table") or {}
-                if isinstance(t, dict) and t.get("id") == table_id:
-                    mid = str(m.get("id"))
-                    if mid in added_ids:
-                        continue
-                    final.append({
-                        "rerank_score": float(item["rerank_score"]),
-                        "modal": "table",
-                        "id": m.get("id"),
-                        "doc_id": m.get("doc_id"),
-                        "page": m.get("page"),
-                        "type": m.get("type"),
-                        "order": m.get("order"),
-                        "content": m.get("raw_content") or m.get("embed_text"),
-                        "table": m.get("table"),
-                        "meta": m.get("meta"),
-                        "source_file": m.get("source_file"),
-                        "index_dir": d,
-                        "is_full_table": True,
-                        "table_id": table_id,
-                    })
-                    added_ids.add(mid)
-    if len(final) > output_cap:
-        final = final[: output_cap]
+    # if return_table_full:
+    #     metas_cache: Dict[str, List[Dict[str, Any]]] = {}
+    #     added_ids = set([str(x["id"]) for x in final])
+    #     for item in list(final):
+    #         mtab = item.get("table") or {}
+    #         table_id = mtab.get("id") if isinstance(mtab, dict) else None
+    #         if not table_id:
+    #             continue
+    #         d = item["index_dir"]
+    #         if d not in metas_cache:
+    #             metas_cache[d] = load_meta(os.path.join(d, "meta.jsonl"))
+    #         metas = metas_cache[d]
+    #         for m in metas:
+    #             t = m.get("table") or {}
+    #             if isinstance(t, dict) and t.get("id") == table_id:
+    #                 mid = str(m.get("id"))
+    #                 if mid in added_ids:
+    #                     continue
+    #                 final.append({
+    #                     "rerank_score": float(item["rerank_score"]),
+    #                     "modal": "table",
+    #                     "id": m.get("id"),
+    #                     "doc_id": m.get("doc_id"),
+    #                     "page": m.get("page"),
+    #                     "type": m.get("type"),
+    #                     "order": m.get("order"),
+    #                     "content": m.get("raw_content") or m.get("embed_text"),
+    #                     "table": m.get("table"),
+    #                     "meta": m.get("meta"),
+    #                     "source_file": m.get("source_file"),
+    #                     "index_dir": d,
+    #                     "is_full_table": True,
+    #                     "table_id": table_id,
+    #                 })
+    #                 added_ids.add(mid)
+    # if len(final) > output_cap:
+    #     final = final[: output_cap]
     return {"intent": intent.to_dict(), "results": final, "trace": trace.to_dict()}
 
 
@@ -802,7 +800,6 @@ def route_and_search_multiquery_hyde(
     rerank_instruct: str = "Given a web search query, retrieve relevant passages that answer the query.",
     neighbor_radius: int = 1,
     return_table_full: bool = False,
-    output_cap: int = 400,
     prefer_year: bool = True,
     doc_type_override: Optional[str] = None,  # "report" | "notice" | "both" | None
 ) -> Dict[str, Any]:
@@ -822,7 +819,6 @@ def route_and_search_multiquery_hyde(
         rerank_instruct=rerank_instruct,
         neighbor_radius=neighbor_radius,
         return_table_full=return_table_full,
-        output_cap=output_cap,
         prefer_year=prefer_year,
         doc_type_override=doc_type_override,
     )
@@ -866,7 +862,6 @@ def route_and_search_multiquery_hyde(
                 rerank_instruct=rerank_instruct,
                 neighbor_radius=neighbor_radius,
                 return_table_full=return_table_full,
-                output_cap=output_cap,
                 prefer_year=prefer_year,
                 doc_type_override=doc_type_override,
             )
@@ -925,9 +920,11 @@ def build_answer_messages(
     per_chunk_limit: int,
     include_full_table: bool = False,
     max_total_length: int = 120000,  # API限制129024，留余量
-) -> List[Dict[str, Any]]:
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     # 拼装中文回答指令，包含引用片段
     lines: List[str] = []
+    # 记录处理后的上下文信息，用于返回源资料
+    processed_contexts: List[Dict[str, Any]] = []
     # 可选：将同一表格的完整内容整合为一条上下文
     table_full_done: set[str] = set()
     metas_cache: Dict[str, List[Dict[str, Any]]] = {}
@@ -969,6 +966,20 @@ def build_answer_messages(
                 # 表格完整内容不截断（如需可在此处加专用上限）
                 lines.append(f"{tag}\n{full_text}")
                 table_full_done.add(key)
+                # 记录处理后的上下文信息（整表）
+                processed_contexts.append({
+                    "ref": i,
+                    "id": c.get("id"),
+                    "modal": c.get("modal", "unknown"),
+                    "doc_id": doc_id,
+                    "page": page,
+                    "type": "table_full",
+                    "order": c.get("order"),
+                    "content": full_text,  # 使用拼接后的完整内容
+                    "index_dir": index_dir,
+                    "source_file": c.get("source_file"),
+                    "table_id": table_id,
+                })
             else:
                 # 已添加过该表的完整内容，则跳过单行
                 continue
@@ -976,6 +987,19 @@ def build_answer_messages(
             content = _truncate_text(str(c.get("content") or ""), per_chunk_limit)
             tag = f"[{i}] doc={doc_id} page={page} type={typ}".strip()
             lines.append(f"{tag}\n{content}")
+            # 记录处理后的上下文信息（普通内容）
+            processed_contexts.append({
+                "ref": i,
+                "id": c.get("id"),
+                "modal": c.get("modal", "unknown"),
+                "doc_id": doc_id,
+                "page": page,
+                "type": typ,
+                "order": c.get("order"),
+                "content": content,  # 使用截断后的内容
+                "index_dir": index_dir,
+                "source_file": c.get("source_file"),
+            })
     ctx_block = "\n\n".join(lines)
     
     # 构建user_prompt的固定部分（用于估算长度）
@@ -997,7 +1021,7 @@ def build_answer_messages(
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_prompt},
     ]
-    return messages
+    return messages, processed_contexts
 
 
 def call_chat_completion(messages: List[Dict[str, Any]], model: str, temperature: float, max_tokens: int) -> str:
@@ -1193,12 +1217,11 @@ def main(argv: List[str]) -> int:
         rerank_instruct=args.rerank_instruct,
         neighbor_radius=args.neighbor_radius,
         return_table_full=args.return_table_full,
-        output_cap=args.output_cap,
     )
     if args.quiet_results:
         if args.gen_answer:
             used = res[: max(1, args.answer_topk)]
-            messages = build_answer_messages(
+            messages, processed_contexts = build_answer_messages(
                 query=args.query,
                 contexts=used,
                 system_prompt=args.answer_system,
@@ -1212,19 +1235,8 @@ def main(argv: List[str]) -> int:
                 temperature=args.answer_temperature,
                 max_tokens=args.answer_max_tokens,
             )
-            sources = []
-            for i, it in enumerate(used, start=1):
-                sources.append({
-                    "ref": i,
-                    "id": it.get("id"),
-                    "doc_id": it.get("doc_id"),
-                    "page": it.get("page"),
-                    "type": it.get("type"),
-                    "order": it.get("order"),
-                    "content": it.get("content"),
-                    "index_dir": it.get("index_dir"),
-                    "source_file": it.get("source_file"),
-                })
+            # 使用处理后的上下文信息构建 sources，确保与提供给大模型的内容一致
+            sources = processed_contexts
             print(json.dumps({"answer": answer, "sources": sources}, ensure_ascii=False))
         else:
             print(json.dumps({"results": res}, ensure_ascii=False))
@@ -1233,7 +1245,7 @@ def main(argv: List[str]) -> int:
             print(json.dumps(r, ensure_ascii=False))
         if args.gen_answer:
             used = res[: max(1, args.answer_topk)]
-            messages = build_answer_messages(
+            messages, processed_contexts = build_answer_messages(
                 query=args.query,
                 contexts=used,
                 system_prompt=args.answer_system,
@@ -1247,19 +1259,8 @@ def main(argv: List[str]) -> int:
                 temperature=args.answer_temperature,
                 max_tokens=args.answer_max_tokens,
             )
-            sources = []
-            for i, it in enumerate(used, start=1):
-                sources.append({
-                    "ref": i,
-                    "id": it.get("id"),
-                    "doc_id": it.get("doc_id"),
-                    "page": it.get("page"),
-                    "type": it.get("type"),
-                    "order": it.get("order"),
-                    "content": it.get("content"),
-                    "index_dir": it.get("index_dir"),
-                    "source_file": it.get("source_file"),
-                })
+            # 使用处理后的上下文信息构建 sources，确保与提供给大模型的内容一致
+            sources = processed_contexts
             print(json.dumps({"answer": answer, "sources": sources}, ensure_ascii=False))
     return 0
 
