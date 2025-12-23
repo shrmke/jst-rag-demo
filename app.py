@@ -18,11 +18,11 @@ import streamlit as st
 from search import route_and_search as route_and_search_e2e
 from search import route_and_search_multiquery_hyde as route_and_search_mq_hyde
 
-SEARCH_PY = "/home/wangyaqi/jst/search.py"
-DEFAULT_FAISS_FIN = "/home/wangyaqi/jst/金盘财报_indexes/faiss_exp"
-DEFAULT_BM25_FIN = "/home/wangyaqi/jst/金盘财报_indexes/bm25_exp"
-DEFAULT_FAISS_ANN = "/home/wangyaqi/jst/金盘上市公告_indexes/faiss_exp"
-DEFAULT_BM25_ANN = "/home/wangyaqi/jst/金盘上市公告_indexes/bm25_exp"
+SEARCH_PY = "/Users/wangyaqi/Documents/cursor_project/jst-rag-demo/jst-rag-demo/search.py"
+DEFAULT_FAISS_FIN = "/Users/wangyaqi/Documents/cursor_project/jst-rag-demo/jst-rag-demo/金盘财报_indexes/faiss_exp"
+DEFAULT_BM25_FIN = "/Users/wangyaqi/Documents/cursor_project/jst-rag-demo/jst-rag-demo/金盘财报_indexes/bm25_exp"
+DEFAULT_FAISS_ANN = "/Users/wangyaqi/Documents/cursor_project/jst-rag-demo/jst-rag-demo/金盘上市公告_indexes/faiss_exp"
+DEFAULT_BM25_ANN = "/Users/wangyaqi/Documents/cursor_project/jst-rag-demo/jst-rag-demo/金盘上市公告_indexes/bm25_exp"
 
 
 def build_cmd(
@@ -36,9 +36,9 @@ def build_cmd(
     bm25_per_index: int,
     alpha: float,
     neighbor_radius: int,
-    return_table_full: bool,
+    # return_table_full removed
     gen_answer: bool,
-    answer_topk: int,
+    # answer_topk removed
     answer_temperature: float,
     answer_max_tokens: int,
     answer_model: Optional[str],
@@ -63,12 +63,11 @@ def build_cmd(
         "--mode", "hybrid",
         "--variant", "exp",
     ]
-    if return_table_full:
-        cmd.append("--return-table-full")
+    # return_table_full removed
     if gen_answer:
         cmd.append("--gen-answer")
         cmd += [
-            "--answer-topk", str(answer_topk),
+            # answer_topk removed
             "--answer-temperature", str(answer_temperature),
             "--answer-max-tokens", str(answer_max_tokens),
         ]
@@ -152,8 +151,9 @@ def render_trace(trace: Dict[str, Any], intent: Optional[Dict[str, Any]] = None)
             dur = s.get("duration_ms")
             # 根据步骤名给出中文描述
             step_descriptions = {
-                "rules.detect_complexity": "检测查询复杂度",
-                "rules.classify_doc_type": "识别文档类型",
+                "rules.extract_years": "提取年份(规则)",
+                "rules.classify_doc_type": "识别文档类型(规则)",
+                "llm.extract_metadata": "提取年份与类型(LLM)",
                 "intent.finalize": "完成意图整合"
             }
             desc = step_descriptions.get(name, name)
@@ -215,8 +215,8 @@ def sidebar_help():
 
                 3. 知识库：
                    - 选择“财报”将自动映射至:
-                     - FAISS: /home/wangyaqi/jst/金盘财报_indexes/faiss_exp
-                     - BM25:  /home/wangyaqi/jst/金盘财报_indexes/bm25_exp
+                     - FAISS: /Users/wangyaqi/Documents/cursor_project/jst-rag-demo/jst-rag-demo/金盘财报_indexes/faiss_exp
+                     - BM25:  /Users/wangyaqi/Documents/cursor_project/jst-rag-demo/jst-rag-demo/金盘财报_indexes/bm25_exp
                    - 选择“自定义路径”可手动指定。
                 """
             )
@@ -238,17 +238,23 @@ def create_download_link(df: pd.DataFrame, filename: str) -> str:
 def run_benchmark_evaluation(params: Dict[str, Any], progress_callback=None) -> tuple[pd.DataFrame, Dict[str, float]]:
     """运行基准测试和评估"""
     try:
+        # 构建配置参数的JSON字符串
+        import json
+        config_json = json.dumps(params, ensure_ascii=False)
+
         # 构建命令
         cmd = [
-            "python3", "/home/wangyaqi/jst/测试文件/test_benchmark.py",
+            "python3", "/Users/wangyaqi/Documents/cursor_project/jst-rag-demo/jst-rag-demo/测试文件/test_benchmark.py",
             "--input", params["input_file"],
+            "--config", config_json,  # 传递完整配置
             "--timestamp"  # 使用时间戳命名
         ]
+        current_dir = os.path.dirname(os.path.abspath(__file__))
 
         # 运行测试，使用Popen以便实时读取输出
         proc = subprocess.Popen(
             cmd,
-            cwd="/home/wangyaqi",
+            cwd=current_dir,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
@@ -341,37 +347,46 @@ def render_benchmark_page():
 
     with col1:
         st.subheader("检索参数")
+        run_faiss = st.checkbox("启用密集检索 (FAISS)", value=True, key="bench_run_faiss")
+        run_bm25 = st.checkbox("启用稀疏检索 (BM25)", value=True, key="bench_run_bm25")
+        
         pre_topk = st.number_input("pre_topk（BM25+Embedding预选）", min_value=5, max_value=200, value=30, step=1, key="bench_pre_topk")
         rerank_topk = st.number_input("rerank_topk（重排返回）", min_value=1, max_value=50, value=10, step=1, key="bench_rerank_topk")
         faiss_per_index = st.number_input("每子库向量检索 topK", min_value=1, max_value=100, value=50, step=1, key="bench_faiss_per_index")
         bm25_per_index = st.number_input("每子库 BM25 检索 topK", min_value=1, max_value=200, value=50, step=1, key="bench_bm25_per_index")
-        alpha = st.slider("BM25 权重 α（混合打分）", min_value=0.0, max_value=1.0, value=0.5, step=0.05, key="bench_alpha")
+        
+        alpha = 0.5
+        if run_faiss and run_bm25:
+            alpha = st.slider("BM25 权重 α（混合打分）", min_value=0.0, max_value=1.0, value=0.5, step=0.05, key="bench_alpha")
+            
         neighbor_radius = st.number_input("返回上下相邻 chunk 半径", min_value=0, max_value=5, value=1, step=1, key="bench_neighbor_radius")
-        return_table_full = st.checkbox("命中表格返回整表", value=True, key="bench_return_table_full")
+        # return_table_full removed
 
     with col2:
         st.subheader("回答参数")
         gen_answer = st.checkbox("生成回答", value=True, key="bench_gen_answer")
-        answer_topk = st.number_input("用于回答的TopK条数", min_value=1, max_value=50, value=10, step=1, key="bench_answer_topk")
+        # answer_topk removed
         answer_temperature = st.slider("回答 temperature", min_value=0.0, max_value=1.0, value=0.1, step=0.05, key="bench_answer_temperature")
         answer_max_tokens = st.number_input("回答 max_tokens", min_value=128, max_value=4096, value=512, step=64, key="bench_answer_max_tokens")
         answer_model = st.text_input("回答模型（可选）", value="", key="bench_answer_model")
 
         st.subheader("测试文件")
-        input_file = st.text_input("基准测试文件路径", value="/home/wangyaqi/jst/测试文件/金盘benchmark测试.xlsx", key="bench_input_file")
+        input_file = st.text_input("基准测试文件路径", value="/Users/wangyaqi/Documents/cursor_project/jst-rag-demo/jst-rag-demo/测试文件/金盘benchmark测试.xlsx", key="bench_input_file")
 
     # 运行测试按钮
     if st.button("开始自动测试", type="primary", use_container_width=True):
         params = {
+            "run_faiss": run_faiss,
+            "run_bm25": run_bm25,
             "pre_topk": pre_topk,
             "rerank_topk": rerank_topk,
             "faiss_per_index": faiss_per_index,
             "bm25_per_index": bm25_per_index,
             "alpha": alpha,
             "neighbor_radius": neighbor_radius,
-            "return_table_full": return_table_full,
+            # "return_table_full": return_table_full, # removed
             "gen_answer": gen_answer,
-            "answer_topk": answer_topk,
+            # "answer_topk": answer_topk, # removed
             "answer_temperature": answer_temperature,
             "answer_max_tokens": answer_max_tokens,
             "answer_model": answer_model,
@@ -433,7 +448,6 @@ def render_benchmark_page():
             "rerank_topk": params["rerank_topk"],
             "alpha": params["alpha"],
             "neighbor_radius": params["neighbor_radius"],
-            "用于回答的TopK": params["answer_topk"],
             "回答temperature": params["answer_temperature"],
             "回答max_tokens": params["answer_max_tokens"]
         }
@@ -509,13 +523,20 @@ def render_search_page():
             bm25_dir = st.sidebar.text_input("BM25 目录", value=DEFAULT_BM25_FIN)
 
     st.sidebar.header("检索/重排参数")
+    run_faiss = st.sidebar.checkbox("启用密集检索 (FAISS)", value=True)
+    run_bm25 = st.sidebar.checkbox("启用稀疏检索 (BM25)", value=True)
+    
     pre_topk = st.sidebar.number_input("pre_topk（BM25+Embedding预选）", min_value=5, max_value=200, value=30, step=1)
-    rerank_topk = st.sidebar.number_input("rerank_topk（重排返回）", min_value=1, max_value=50, value=10, step=1)
+    rerank_topk = st.sidebar.number_input("rerank_topk（重排返回）", min_value=1, max_value=50, value=30, step=1)
     faiss_per_index = st.sidebar.number_input("每子库向量检索 topK", min_value=1, max_value=100, value=50, step=1)
     bm25_per_index = st.sidebar.number_input("每子库 BM25 检索 topK", min_value=1, max_value=200, value=50, step=1)
-    alpha = st.sidebar.slider("BM25 权重 α（混合打分）", min_value=0.0, max_value=1.0, value=0.5, step=0.05)
+    
+    alpha = 0.5
+    if run_faiss and run_bm25:
+        alpha = st.sidebar.slider("BM25 权重 α（混合打分）", min_value=0.0, max_value=1.0, value=0.5, step=0.05)
+    
     neighbor_radius = st.sidebar.number_input("返回上下相邻 chunk 半径", min_value=0, max_value=5, value=1, step=1)
-    return_table_full = st.sidebar.checkbox("命中表格返回整表", value=True)
+    # return_table_full removed
 
     st.sidebar.header("文档类型指定")
     doc_type_choice = st.sidebar.selectbox(
@@ -540,7 +561,7 @@ def render_search_page():
 
     st.sidebar.header("回答参数")
     gen_answer = st.sidebar.checkbox("生成回答", value=True)
-    answer_topk = st.sidebar.number_input("用于回答的TopK条数", min_value=1, max_value=50, value=10, step=1)
+    # answer_topk removed (use rerank_topk implicitly by using all results)
     answer_temperature = st.sidebar.slider("回答 temperature", min_value=0.0, max_value=1.0, value=0.1, step=0.05)
     answer_max_tokens = st.sidebar.number_input("回答 max_tokens", min_value=128, max_value=4096, value=512, step=64)
     answer_max_chars = st.sidebar.number_input("每条上下文最大字符数", min_value=200, max_value=5000, value=1200, step=100)
@@ -577,23 +598,27 @@ def render_search_page():
                             bm25_per_index=int(bm25_per_index),
                             rerank_topk=int(rerank_topk),
                             neighbor_radius=int(neighbor_radius),
-                            return_table_full=bool(return_table_full),
+                            # return_table_full=True, # Always True
                             prefer_year=True,
                             doc_type_override=doc_type_override,
+                            run_faiss=bool(run_faiss),
+                            run_bm25=bool(run_bm25),
                         )
                     else:
                         data = route_and_search_e2e(
                             query=query.strip(),
-                            topk=int(answer_topk),  # 取回答用 topk 作为主检索 topk
+                            # topk=int(answer_topk), # Removed
                             alpha=float(alpha),
                             pre_topk=int(pre_topk),
                             faiss_per_index=int(faiss_per_index),
                             bm25_per_index=int(bm25_per_index),
                             rerank_topk=int(rerank_topk),
                             neighbor_radius=int(neighbor_radius),
-                            return_table_full=bool(return_table_full),
+                            # return_table_full=True, # Always True
                             prefer_year=True,
                             doc_type_override=doc_type_override,
+                            run_faiss=bool(run_faiss),
+                            run_bm25=bool(run_bm25),
                         )
                     status.update(label="完成", state="complete", expanded=False)
                 except Exception as e:
@@ -635,7 +660,7 @@ def render_search_page():
                     render_results(merged, show_header=False)
                 # 生成回答（用合并结果）
                 if gen_answer:
-                    used = (merged or [])[: max(1, int(answer_topk))]
+                    used = (merged or []) # Use all results
                     from search import build_answer_messages, call_chat_completion, QWEN_CHAT_MODEL
                     messages = build_answer_messages(
                         query=query.strip(),
@@ -674,7 +699,7 @@ def render_search_page():
                 render_trace(trace, intent=intent)
                 results = (data or {}).get("results") or []
                 if gen_answer:
-                    used = results[: max(1, int(answer_topk))]
+                    used = results # Use all results
                     from search import build_answer_messages, call_chat_completion, QWEN_CHAT_MODEL
                     messages,processed_contexts = build_answer_messages(
                         query=query.strip(),
@@ -717,9 +742,9 @@ def render_search_page():
                 bm25_per_index=int(bm25_per_index),
                 alpha=float(alpha),
                 neighbor_radius=int(neighbor_radius),
-                return_table_full=bool(return_table_full),
+                # return_table_full=bool(return_table_full), # Removed from UI
                 gen_answer=bool(gen_answer),
-                answer_topk=int(answer_topk),
+                # answer_topk=int(answer_topk), # Removed from UI
                 answer_temperature=float(answer_temperature),
                 answer_max_tokens=int(answer_max_tokens),
                 answer_model=answer_model.strip() or None,
@@ -743,5 +768,3 @@ def render_search_page():
 
 if __name__ == "__main__":
     main()
-
-

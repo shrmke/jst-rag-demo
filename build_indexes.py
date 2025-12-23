@@ -12,15 +12,15 @@ Build FAISS and BM25 indexes from chunk JSONL files.
 Usage examples:
   # experiment group (no HTML stripping)
   python3 build_indexes.py \
-    --chunks-dir /home/wangyaqi/jst/chunks_exp \
-    --out-faiss /home/wangyaqi/jst/indexes/faiss_exp \
-    --out-bm25  /home/wangyaqi/jst/indexes/bm25_exp
+    --chunks-dir /Users/wangyaqi/Documents/cursor_project/jst-rag-demo/jst-rag-demo/chunks_exp \
+    --out-faiss /Users/wangyaqi/Documents/cursor_project/jst-rag-demo/jst-rag-demo/indexes/faiss_exp \
+    --out-bm25  /Users/wangyaqi/Documents/cursor_project/jst-rag-demo/jst-rag-demo/indexes/bm25_exp
 
   # control group (strip HTML for embedding, keep raw HTML in metadata for display)
   python3 build_indexes.py \
-    --chunks-dir /home/wangyaqi/jst/chunks_ctrl \
-    --out-faiss /home/wangyaqi/jst/indexes/faiss_ctrl \
-    --out-bm25  /home/wangyaqi/jst/indexes/bm25_ctrl \
+    --chunks-dir /Users/wangyaqi/Documents/cursor_project/jst-rag-demo/jst-rag-demo/chunks_ctrl \
+    --out-faiss /Users/wangyaqi/Documents/cursor_project/jst-rag-demo/jst-rag-demo/indexes/faiss_ctrl \
+    --out-bm25  /Users/wangyaqi/Documents/cursor_project/jst-rag-demo/jst-rag-demo/indexes/bm25_ctrl \
     --strip-html
 
 This script prints per-file elapsed time and accumulates total elapsed; if API returns token usage, totals are printed as well.

@@ -225,9 +225,9 @@ def build_registry(
 
 def parse_args(argv: List[str]) -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Build registry from existing FAISS/BM25 indexes without rebuilding")
-    p.add_argument("--faiss-root", action="append", default=[], help="FAISS root directory (may repeat). Example: /home/wangyaqi/jst/金盘财报_indexes/faiss_exp")
-    p.add_argument("--bm25-root", action="append", default=[], help="BM25 root directory (may repeat). Example: /home/wangyaqi/jst/金盘财报_indexes/bm25_exp")
-    p.add_argument("--out-dir", default="/home/wangyaqi/jst/registry", help="Output dir for doc_registry.json and index_registry.json")
+    p.add_argument("--faiss-root", action="append", default=[], help="FAISS root directory (may repeat). Example: /Users/wangyaqi/Documents/cursor_project/jst-rag-demo/jst-rag-demo/金盘财报_indexes/faiss_exp")
+    p.add_argument("--bm25-root", action="append", default=[], help="BM25 root directory (may repeat). Example: /Users/wangyaqi/Documents/cursor_project/jst-rag-demo/jst-rag-demo/金盘财报_indexes/bm25_exp")
+    p.add_argument("--out-dir", default="/Users/wangyaqi/Documents/cursor_project/jst-rag-demo/jst-rag-demo/registry", help="Output dir for doc_registry.json and index_registry.json")
     return p.parse_args(argv)
 
 
@@ -238,12 +238,12 @@ def main(argv: List[str]) -> int:
     if not (faiss_roots or bm25_roots):
         # Provide sensible defaults if none supplied
         defaults_f = [
-            "/home/wangyaqi/jst/金盘财报_indexes/faiss_exp",
-            "/home/wangyaqi/jst/金盘上市公告_indexes/faiss_exp",
+            "/Users/wangyaqi/Documents/cursor_project/jst-rag-demo/jst-rag-demo/金盘财报_indexes/faiss_exp",
+            "/Users/wangyaqi/Documents/cursor_project/jst-rag-demo/jst-rag-demo/金盘上市公告_indexes/faiss_exp",
         ]
         defaults_b = [
-            "/home/wangyaqi/jst/金盘财报_indexes/bm25_exp",
-            "/home/wangyaqi/jst/金盘上市公告_indexes/bm25_exp",
+            "/Users/wangyaqi/Documents/cursor_project/jst-rag-demo/jst-rag-demo/金盘财报_indexes/bm25_exp",
+            "/Users/wangyaqi/Documents/cursor_project/jst-rag-demo/jst-rag-demo/金盘上市公告_indexes/bm25_exp",
         ]
         faiss_roots = [x for x in defaults_f if os.path.isdir(x)]
         bm25_roots = [x for x in defaults_b if os.path.isdir(x)]

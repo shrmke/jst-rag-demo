@@ -1,12 +1,16 @@
 from __future__ import annotations
-
+import sys
 import json
 import time
-from typing import Any, Callable, Dict, List, Optional, Tuple
+import urllib.request as _ureq
+from typing import Any, Dict, List, Optional, Tuple
 from .intent_schema import TokenStats
+from datetime import datetime
 
-
-LLMCaller = Callable[[List[Dict[str, str]], Dict[str, Any]], Dict[str, Any]]
+# Hardcoded Configuration
+QWEN_API_KEY = "sk-6a44d15e56dd4007945ccc41b97b499c"
+QWEN_API_BASE = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+QWEN_CHAT_MODEL = "qwen-plus"
 
 
 def _now_ms() -> int:
@@ -33,151 +37,148 @@ def _extract_usage(resp: Dict[str, Any], prompt: str, completion: str) -> TokenS
 
 
 def _call_llm(
-    caller: Optional[LLMCaller],
     messages: List[Dict[str, str]],
     extra: Optional[Dict[str, Any]] = None,
 ) -> Tuple[str, TokenStats, int]:
     """
+    Directly call Qwen API with hardcoded credentials.
     Returns (content, token_stats, duration_ms)
     """
     if extra is None:
         extra = {}
+    
     start = _now_ms()
-    if caller is None:
-        # No-op fallback
-        content = "{\"rewrite\": \"%s\", \"sub_questions\": [], \"doc_type\": \"unknown\"}" % (
-            messages[-1]["content"].replace('"', '\\"')
-        )
-        ts = TokenStats(prompt_tokens=_estimate_tokens(messages[-1]["content"]), completion_tokens=10, total_tokens=10 + _estimate_tokens(messages[-1]["content"]))
-        return content, ts, max(1, _now_ms() - start)
-    resp = caller(messages, extra)
-    duration_ms = max(1, _now_ms() - start)
+    
+    url = f"{QWEN_API_BASE}/chat/completions"
+    model = extra.get("model", QWEN_CHAT_MODEL)
+    temperature = extra.get("temperature", 0.1)
+    
+    payload = {
+        "model": model,
+        "messages": messages,
+        "temperature": temperature,
+        "max_tokens": 2000
+    }
+    
+    # Optional params
+    if "response_format" in extra:
+        payload["response_format"] = {"type": "json_object"}
+
+    req = _ureq.Request(url, data=json.dumps(payload).encode("utf-8"), method="POST")
+    req.add_header("Content-Type", "application/json")
+    req.add_header("Authorization", f"Bearer {QWEN_API_KEY}")
+
     content = ""
-    # Common shapes
-    if isinstance(resp, dict):
-        if "choices" in resp:
-            choices = resp["choices"] or []
-            if choices:
-                msg = choices[0].get("message") or {}
-                content = msg.get("content", "") or ""
-        elif "output" in resp:
-            # Some SDKs use "output" to store text
-            content = resp.get("output", "") or ""
-    if not content and isinstance(resp, dict):
-        content = resp.get("content", "") or ""
-    token_stats = _extract_usage(resp if isinstance(resp, dict) else {}, json.dumps(messages, ensure_ascii=False), content)
+    resp_json = {}
+    
+    try:
+        with _ureq.urlopen(req, timeout=30) as resp:
+            body = resp.read().decode("utf-8", errors="ignore")
+            resp_json = json.loads(body)
+            print(f"-------- [LLM resp_json] --------\n{resp_json}\n----------------------------------", file=sys.stderr, flush=True)
+            if "choices" in resp_json:
+                choices = resp_json["choices"] or []
+                if choices:
+                    msg = choices[0].get("message") or {}
+                    content = msg.get("content", "") or ""
+    except Exception as e:
+        # Simple error handling: return empty content on failure
+        # print(f"LLM Call Error: {e}")
+        print(f"[LLM Call Error]: {e}", file=sys.stderr, flush=True)
+        pass
+
+    duration_ms = max(1, _now_ms() - start)
+    token_stats = _extract_usage(resp_json, json.dumps(messages, ensure_ascii=False), content)
+    
     return content, token_stats, duration_ms
 
 
-def llm_rewrite_and_split(
+def llm_extract_metadata(
     text: str,
-    caller: Optional[LLMCaller] = None,
-    temperature: float = 0.2,
-) -> Dict[str, Any]:
-    """
-    Ask LLM (Qwen) to rewrite and split query into structured JSON.
-    Returns:
-      {
-        "rewrite": str,
-        "subqs": [{"text": str, "years": [int], "doc_type": "report|notice|unknown"}],
-        "tokens": { ... },
-        "ms": int
-      }
-    """
-    sys_prompt = (
-        "今年是2025年，你是一个中文信息抽取助手。请将用户问题改写为更明确、不可歧义的表达，并在需要时拆分为若干子问题。\n"
-        "输出必须是JSON，字段：\n"
-        "rewrite: 字符串；\n"
-        "subqs: 子问题数组，每项包含 text（字符串）、可选 years（数组，整数）、可选 doc_type（report|notice|unknown）。\n"
-    )
-    user_prompt = f"用户问题：{text}\n请仅输出JSON，不要其他文字。"
-    messages = [
-        {"role": "system", "content": sys_prompt},
-        {"role": "user", "content": user_prompt},
-    ]
-    content, token_stats, ms = _call_llm(
-        caller,
-        messages,
-        extra={"temperature": temperature, "response_format": "json"},
-    )
-    rewrite = text
-    subqs: List[Dict[str, Any]] = []
-    try:
-        data = json.loads(content)
-        rewrite = data.get("rewrite", text) or text
-        for sq in data.get("subqs", []) or []:
-            if not isinstance(sq, dict):
-                continue
-            item = {"text": str(sq.get("text", "")).strip()}
-            if "years" in sq and isinstance(sq["years"], list):
-                years = []
-                for y in sq["years"]:
-                    try:
-                        years.append(int(y))
-                    except Exception:
-                        pass
-                if years:
-                    item["years"] = years
-            if "doc_type" in sq:
-                item["doc_type"] = sq["doc_type"]
-            subqs.append(item)
-    except Exception:
-        # Fallback: keep original as single subq
-        subqs = [{"text": text}]
-    return {
-        "rewrite": rewrite,
-        "subqs": subqs,
-        "tokens": token_stats.to_dict(),
-        "ms": ms,
-    }
-
-
-def llm_type_disambiguation(
-    text: str,
-    caller: Optional[LLMCaller] = None,
     temperature: float = 0.1,
 ) -> Dict[str, Any]:
     """
-    Ask LLM to decide the more likely doc_type with confidence.
+    Ask LLM to extract years and document type from the query.
     Returns:
       {
-        "type": "report|notice|unknown",
-        "prob": float,
+        "years": [int],
+        "doc_type": "report|notice|unknown",
         "tokens": { ... },
-        "ms": int
+        "ms": int,
+        "error": bool  # True if JSON parsing failed
       }
     """
-    sys_prompt = (
-        "你是一个分类助手。根据用户问题判断其更接近哪一类：财报类（report）或公告类（notice）。\n"
-        "请只输出JSON：{type:'report|notice|unknown', prob: 0..1}。"
-    )
+    current_year = datetime.now().year
+    sys_prompt = f"""你是一个专业的RAG查询路由助手。你的任务是分析用户的查询，提取元数据过滤条件。
+
+今年是 {current_year}年
+
+请提取以下维度的过滤条件（如果用户未提及，则不要包含该字段）：
+1. years (List[int]): 具体的年份列表。请将"今年"、"去年"、"前年"等相对时间转换为具体的四位数字年份。如果是范围，请列出范围内的所有年份。如果无法识别或未提及年份，请返回空列表 []。
+2. category (str): 判断查询的信息来源，例如如果询问某财务数额，那么信息来源为"report",否则请返回"unknown"。
+
+请直接返回 JSON 格式结果，不要包含任何 Markdown 格式或额外解释。
+JSON 格式示例:
+{{
+    "search_filters": {{
+        "years": [2023, 2024],
+        "category": "report"
+    }}
+}}
+"""
     user_prompt = f"用户问题：{text}\n请仅输出JSON。"
     messages = [
         {"role": "system", "content": sys_prompt},
         {"role": "user", "content": user_prompt},
     ]
+    
+    # No caller passed, direct call
     content, token_stats, ms = _call_llm(
-        caller,
         messages,
         extra={"temperature": temperature, "response_format": "json"},
     )
-    dtype = "unknown"
-    prob = 0.0
+    print(f"-------- [LLM Raw Output] --------\n{content}\n----------------------------------", file=sys.stderr, flush=True)
+    
+    years = []
+    doc_type = "unknown"
+    error = False
+    
     try:
         data = json.loads(content)
-        t = str(data.get("type", "unknown")).strip().lower()
-        if t in {"report", "notice", "unknown"}:
-            dtype = t
-        p = float(data.get("prob", 0.0))
-        if 0.0 <= p <= 1.0:
-            prob = p
-    except Exception:
-        pass
-    return {
-        "type": dtype,
-        "prob": prob,
+        # Handle nested search_filters
+        filters = data.get("search_filters", {})
+        
+        # Extract years
+        # Support both "years" (list) and "year" (int/list) for robustness
+        raw_years = filters.get("years") or filters.get("year") or []
+        if isinstance(raw_years, (int, str)):
+             raw_years = [raw_years]
+        
+        if isinstance(raw_years, list):
+            for y in raw_years:
+                try:
+                    years.append(int(y))
+                except (ValueError, TypeError):
+                    pass
+        
+        # Extract category -> doc_type
+        # Map "announce" to "notice" to match system convention
+        cat = str(filters.get("category", "unknown")).lower().strip()
+        if cat == "report":
+            doc_type = "report"
+        else:
+            doc_type = "unknown"
+            
+    except Exception as e:
+        print(f"[Parse Error]: {e}", file=sys.stderr, flush=True)
+        error = True
+
+    result = {
+        "years": sorted(list(set(years))),
+        "doc_type": doc_type,
         "tokens": token_stats.to_dict(),
         "ms": ms,
+        "error": error,
     }
-
-
+    print(f"-------- [Extracted Metadata] --------\n{result}\n--------------------------------------", file=sys.stderr, flush=True)
+    return result

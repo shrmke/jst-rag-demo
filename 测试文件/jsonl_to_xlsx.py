@@ -44,8 +44,8 @@ def jsonl_to_xlsx(input_jsonl: str, output_xlsx: str) -> None:
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         # 默认转换benchmark_results_v1.jsonl
-        input_file = "/home/wangyaqi/jst/测试文件/benchmark_results_v2.jsonl"
-        output_file = "/home/wangyaqi/jst/测试文件/benchmark_results_v2.xlsx"
+        input_file = "/Users/wangyaqi/Documents/cursor_project/jst-rag-demo/jst-rag-demo/测试文件/benchmark_results_v2.jsonl"
+        output_file = "/Users/wangyaqi/Documents/cursor_project/jst-rag-demo/jst-rag-demo/测试文件/benchmark_results_v2.xlsx"
     elif len(sys.argv) == 2:
         # 只提供输入文件，输出文件名自动生成
         input_file = sys.argv[1]

@@ -373,7 +373,7 @@ def main(argv: List[str]) -> int:
         _log(f"找不到输入路径: {input_path}")
         return 2
 
-    DEFAULT_OUTPUT_DIR = os.path.abspath("/home/wangyaqi/jst/金盘上市公告_table2text")
+    DEFAULT_OUTPUT_DIR = os.path.abspath("/Users/wangyaqi/Documents/cursor_project/jst-rag-demo/jst-rag-demo/金盘上市公告_table2text")
 
     # 单文件模式：输出到固定目录，文件名保持不变；仅按文件是否已存在来跳过
     if os.path.isfile(input_path):

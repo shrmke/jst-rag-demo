@@ -11,7 +11,7 @@ from datetime import datetime
 from typing import List, Dict, Any
 
 # 添加项目根目录到路径
-sys.path.insert(0, '/home/wangyaqi/jst')
+sys.path.insert(0, '/Users/wangyaqi/Documents/cursor_project/jst-rag-demo/jst-rag-demo')
 
 from search import route_and_search, build_answer_messages, call_chat_completion, QWEN_CHAT_MODEL
 
@@ -19,9 +19,10 @@ def parse_arguments():
     """解析命令行参数"""
     parser = argparse.ArgumentParser(description='运行基准测试或单条查询')
     parser.add_argument('--query', type=str, help='单条查询字符串，如果提供则执行单条查询而不是批量测试')
-    parser.add_argument('--input', type=str, default="/home/wangyaqi/jst/测试文件/金盘benchmark测试.xlsx",
+    parser.add_argument('--input', type=str, default="/Users/wangyaqi/Documents/cursor_project/jst-rag-demo/jst-rag-demo/测试文件/金盘benchmark测试.xlsx",
                        help='批量测试输入Excel文件路径')
     parser.add_argument('--output', type=str, help='批量测试输出JSONL文件路径，如果不提供则使用时间戳命名')
+    parser.add_argument('--config', type=str, help='包含检索和生成参数的JSON字符串配置')
     parser.add_argument('--timestamp', action='store_true', help='输出文件名是否使用时间戳命名')
     return parser.parse_args()
 
@@ -34,7 +35,7 @@ def run_single_query(query: str) -> None:
         # 调用检索和回答生成
         search_response = route_and_search(
             query=query,
-            topk=30,  # 用于回答的TopK条数=30
+            # topk=30,  # 已移除
             alpha=0.5,  # BM25权重α
             pre_topk=30,  # BM25+Embedding预选
             faiss_per_index=50,  # 每子库向量检索topK
@@ -42,7 +43,7 @@ def run_single_query(query: str) -> None:
             rerank_topk=30,  # 重排返回topK
             rerank_instruct="Given a web search query, retrieve relevant passages that answer the query.",
             neighbor_radius=1,  # 返回上下相邻chunk半径
-            return_table_full=True,  # 命中表格返回整表
+            # return_table_full=True,  # 命中表格返回整表
             prefer_year=True,
             doc_type_override=None,  # 自动识别
         )
@@ -89,8 +90,10 @@ def run_single_query(query: str) -> None:
     except Exception as e:
         print(f"查询处理失败: {str(e)}")
 
-def run_benchmark_test(input_xlsx: str, output_jsonl: str) -> None:
+def run_benchmark_test(input_xlsx: str, output_jsonl: str, config: Dict[str, Any] = None) -> None:
     """运行基准测试"""
+    if config is None:
+        config = {}
 
     # 读取测试问题
     print("读取测试数据...")
@@ -114,17 +117,19 @@ def run_benchmark_test(input_xlsx: str, output_jsonl: str) -> None:
                 # 调用检索和回答生成
                 search_response = route_and_search(
                     query=question,
-                    topk=30,  # 用于回答的TopK条数=30
-                    alpha=0.5,  # BM25权重α
-                    pre_topk=30,  # BM25+Embedding预选
-                    faiss_per_index=50,  # 每子库向量检索topK
-                    bm25_per_index=50,  # 每子库BM25检索topK
-                    rerank_topk=30,  # 重排返回topK
+                    # topk=30,  # 已移除
+                    alpha=config.get('alpha', 0.5),  # BM25权重α
+                    pre_topk=config.get('pre_topk', 30),  # BM25+Embedding预选
+                    faiss_per_index=config.get('faiss_per_index', 50),  # 每子库向量检索topK
+                    bm25_per_index=config.get('bm25_per_index', 50),  # 每子库BM25检索topK
+                    rerank_topk=config.get('rerank_topk', 10),  # 重排返回topK
                     rerank_instruct="Given a web search query, retrieve relevant passages that answer the query.",
-                    neighbor_radius=1,  # 返回上下相邻chunk半径
-                    return_table_full=True,  # 命中表格返回整表
+                    neighbor_radius=config.get('neighbor_radius', 1),  # 返回上下相邻chunk半径
+                    # return_table_full=True,  # 命中表格返回整表
                     prefer_year=True,
                     doc_type_override=None,  # 自动识别
+                    run_faiss=config.get('run_faiss', True),
+                    run_bm25=config.get('run_bm25', True),
                 )
 
                 # 提取意图信息
@@ -134,8 +139,10 @@ def run_benchmark_test(input_xlsx: str, output_jsonl: str) -> None:
 
                 # 生成回答
                 model_answer = ""
-                if retrieved_chunks:
-                    contexts_for_answer = retrieved_chunks[:30]  # 用于回答的TopK条数=30
+                gen_answer = config.get('gen_answer', True)
+                
+                if gen_answer and retrieved_chunks:
+                    contexts_for_answer = retrieved_chunks  # route_and_search 已经截断到 rerank_topk
                     try:
                         answer_messages,processed_contexts = build_answer_messages(
                             query=question,
@@ -144,11 +151,16 @@ def run_benchmark_test(input_xlsx: str, output_jsonl: str) -> None:
                             per_chunk_limit=1200,  # 每条上下文最大字符数
                             include_full_table=True,
                         )
+                        
+                        chat_model = config.get('answer_model') or QWEN_CHAT_MODEL
+                        if not chat_model.strip():
+                            chat_model = QWEN_CHAT_MODEL
+                            
                         model_answer = call_chat_completion(
                             messages=answer_messages,
-                            model=QWEN_CHAT_MODEL,
-                            temperature=0.1,  # 回答temperature
-                            max_tokens=512,   # 回答max_tokens
+                            model=chat_model,
+                            temperature=config.get('answer_temperature', 0.1),  # 回答temperature
+                            max_tokens=config.get('answer_max_tokens', 512),   # 回答max_tokens
                         )
                     except Exception as e:
                         model_answer = f"回答生成失败: {str(e)}"
@@ -295,6 +307,7 @@ def run_evaluation(input_jsonl: str, standard_xlsx: str, output_xlsx: str) -> No
             standard_answer = ""
         else:
             standard_answer = str(standard_row['标准回答'].iloc[0])
+            
 
         # 计算相似性分数并记录耗时
         eval_start_time = datetime.now()
@@ -327,17 +340,28 @@ def run_evaluation(input_jsonl: str, standard_xlsx: str, output_xlsx: str) -> No
     print(f"评估结果已保存到: {output_xlsx}")
 
 
-def run_benchmark_test_with_timestamp(input_xlsx: str) -> str:
+def run_benchmark_test_with_timestamp(input_xlsx: str, config: Dict[str, Any] = None) -> str:
     """运行基准测试，输出文件名带时间戳"""
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_jsonl = f"/home/wangyaqi/jst/测试文件/benchmark_results_{timestamp}.jsonl"
+    output_jsonl = f"/Users/wangyaqi/Documents/cursor_project/jst-rag-demo/jst-rag-demo/测试文件/benchmark_results_{timestamp}.jsonl"
 
-    run_benchmark_test(input_xlsx, output_jsonl)
+    run_benchmark_test(input_xlsx, output_jsonl, config=config)
     return output_jsonl
 
 
 if __name__ == "__main__":
     args = parse_arguments()
+
+    # 解析配置
+    config = {}
+    if args.config:
+        try:
+            config = json.loads(args.config)
+            print("已加载配置参数:")
+            print(json.dumps(config, ensure_ascii=False, indent=2))
+        except Exception as e:
+            print(f"解析配置参数失败: {e}")
+            sys.exit(1)
 
     if args.query:
         # 执行单条查询
@@ -346,10 +370,10 @@ if __name__ == "__main__":
         # 执行批量测试
         if args.output is None or args.timestamp:
             # 使用时间戳命名
-            output_file = run_benchmark_test_with_timestamp(args.input)
+            output_file = run_benchmark_test_with_timestamp(args.input, config=config)
         else:
             # 使用指定的输出文件
-            run_benchmark_test(args.input, args.output)
+            run_benchmark_test(args.input, args.output, config=config)
             output_file = args.output
 
         print(f"\n输出文件: {output_file}")

@@ -19,7 +19,7 @@ python3 test_benchmark.py
 
 ### 方法2：使用运行脚本
 ```bash
-cd /home/wangyaqi/jst/测试文件
+cd /Users/wangyaqi/Documents/cursor_project/jst-rag-demo/jst-rag-demo/测试文件
 ./run_test.sh
 ```
 

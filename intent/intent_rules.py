@@ -18,12 +18,6 @@ NOTICE_KEYWORDS = [
     "回复问询", "更正", "变更", "提示性公告", "提示公告", "进展", "终止", "中止",
 ]
 
-# Heuristic tokens indicating composite/complex queries
-COMPLEX_TOKENS = [
-    "分别", "对比", "以及", "和", "与", "及", "、", "每年", "历年", "按年份", "近",
-    "同比", "环比", "变化趋势", "走势", "分别为",
-]
-
 # Regex patterns
 YEAR_PATTERN = re.compile(r"(19|20)\d{2}")
 YEAR_CN_SUFFIX_PATTERN = re.compile(r"((19|20)\d{2})\s*年(度)?")
@@ -178,38 +172,3 @@ def extract_years_and_quarters(text: str, current_year: Optional[int] = None) ->
         "n_recent": n_recent,
         "has_relative": has_relative,
     }
-
-
-def detect_complexity_and_split(text: str, current_year: Optional[int] = None) -> Dict[str, Any]:
-    """
-    Heuristically detect if the query is complex and split into sub-questions when beneficial.
-    Returns:
-      {
-        "is_complex": bool,
-        "rewrite": str,
-        "sub_questions": List[Dict[str,Any]],
-        "years": List[int]
-      }
-    """
-    text = (text or "").strip()
-    rewrite = text  # placeholder: rules-based rewrite can be added later
-
-    ext = extract_years_and_quarters(text, current_year=current_year)
-    years = ext["years"]
-
-    # Complexity by tokens or multiple years
-    token_hits = sum(1 for t in COMPLEX_TOKENS if t in text)
-    is_complex = token_hits > 0 or len(years) > 1
-
-    # No sub-questions generation for now
-    sub_questions: List[Dict[str, Any]] = []
-
-    return {
-        "is_complex": is_complex,
-        "rewrite": rewrite,
-        "sub_questions": sub_questions,
-        "years": years,
-        "quarters": ext["quarters"],
-    }
-
-

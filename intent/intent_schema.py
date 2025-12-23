@@ -128,28 +128,6 @@ class Trace:
 
 
 @dataclass
-class SubQuestion:
-    text: str
-    doc_type: Optional[Literal["report", "notice"]] = None
-    years: List[int] = field(default_factory=list)
-    quarters: List[str] = field(default_factory=list)  # e.g., ["Q1", "Q3"]
-    extra: Dict[str, Any] = field(default_factory=dict)
-
-    def to_dict(self) -> Dict[str, Any]:
-        return _prune_none(asdict(self))
-
-    @staticmethod
-    def from_dict(data: Dict[str, Any]) -> "SubQuestion":
-        return SubQuestion(
-            text=str(data.get("text", "")),
-            doc_type=data.get("doc_type"),
-            years=[int(y) for y in data.get("years", []) if isinstance(y, (int, str))],
-            quarters=[str(q) for q in data.get("quarters", []) if isinstance(q, str)],
-            extra=data.get("extra", {}) or {},
-        )
-
-
-@dataclass
 class RoutingDecision:
     strategy: Literal["year-buckets", "global", "hybrid"] = "year-buckets"
     year_buckets: List[int] = field(default_factory=list)
@@ -171,9 +149,7 @@ class RoutingDecision:
 
 @dataclass
 class QueryIntent:
-    is_complex: bool
-    rewrite: str
-    sub_questions: List[SubQuestion] = field(default_factory=list)
+    # Removed: is_complex, rewrite, sub_questions
     doc_type: Optional[Literal["report", "notice"]] = None
     years: List[int] = field(default_factory=list)
     confidence: float = 0.0
@@ -181,7 +157,6 @@ class QueryIntent:
 
     def to_dict(self) -> Dict[str, Any]:
         data = asdict(self)
-        data["sub_questions"] = [sq.to_dict() for sq in self.sub_questions]
         if self.routing is not None:
             data["routing"] = self.routing.to_dict()
         return _prune_none(data)
@@ -189,11 +164,6 @@ class QueryIntent:
     @staticmethod
     def from_dict(data: Dict[str, Any]) -> "QueryIntent":
         return QueryIntent(
-            is_complex=bool(data.get("is_complex", False)),
-            rewrite=str(data.get("rewrite", "")),
-            sub_questions=[
-                SubQuestion.from_dict(sq) for sq in data.get("sub_questions", []) if isinstance(sq, dict)
-            ],
             doc_type=data.get("doc_type"),
             years=[int(y) for y in data.get("years", []) if isinstance(y, (int, str))],
             confidence=float(data.get("confidence", 0.0)),
@@ -201,7 +171,6 @@ class QueryIntent:
         )
 
 
-# Minimal answer structure placeholder (for future integration)
 @dataclass
 class AnswerChunk:
     text: str
@@ -212,5 +181,3 @@ class AnswerChunk:
 
     def to_dict(self) -> Dict[str, Any]:
         return _prune_none(asdict(self))
-
-

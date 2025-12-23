@@ -13,8 +13,8 @@ except ImportError:
     from .chunk_similarity_service import evaluate_single_file
 
 # Configuration
-INPUT_ROOT = "/home/wangyaqi/jst/金盘上市公告_mineru解析/"
-OUTPUT_ROOT = "/home/wangyaqi/jst/evaluation_chunk/output"
+INPUT_ROOT = "/Users/wangyaqi/Documents/cursor_project/jst-rag-demo/jst-rag-demo/金盘上市公告_mineru解析/"
+OUTPUT_ROOT = "/Users/wangyaqi/Documents/cursor_project/jst-rag-demo/jst-rag-demo/evaluation_chunk/output"
 
 def find_files(root: str) -> List[str]:
     files = []

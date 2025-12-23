@@ -12,27 +12,27 @@ pip install faiss-cpu rank-bm25 numpy
 构建索引
 - 实验组（不 strip HTML）：
 ```bash
-python3 /home/wangyaqi/jst/build_indexes.py \
-  --chunks-dir /home/wangyaqi/jst/chunks_exp \
-  --out-faiss /home/wangyaqi/jst/indexes/faiss_exp \
-  --out-bm25  /home/wangyaqi/jst/indexes/bm25_exp
+python3 /Users/wangyaqi/Documents/cursor_project/jst-rag-demo/jst-rag-demo/build_indexes.py \
+  --chunks-dir /Users/wangyaqi/Documents/cursor_project/jst-rag-demo/jst-rag-demo/chunks_exp \
+  --out-faiss /Users/wangyaqi/Documents/cursor_project/jst-rag-demo/jst-rag-demo/indexes/faiss_exp \
+  --out-bm25  /Users/wangyaqi/Documents/cursor_project/jst-rag-demo/jst-rag-demo/indexes/bm25_exp
 ```
 - 对照组（strip HTML，用于嵌入；回显仍用原始 HTML）：
 ```bash
-python3 /home/wangyaqi/jst/build_indexes.py \
-  --chunks-dir /home/wangyaqi/jst/chunks_ctrl \
-  --out-faiss /home/wangyaqi/jst/indexes/faiss_ctrl \
-  --out-bm25  /home/wangyaqi/jst/indexes/bm25_ctrl \
+python3 /Users/wangyaqi/Documents/cursor_project/jst-rag-demo/jst-rag-demo/build_indexes.py \
+  --chunks-dir /Users/wangyaqi/Documents/cursor_project/jst-rag-demo/jst-rag-demo/chunks_ctrl \
+  --out-faiss /Users/wangyaqi/Documents/cursor_project/jst-rag-demo/jst-rag-demo/indexes/faiss_ctrl \
+  --out-bm25  /Users/wangyaqi/Documents/cursor_project/jst-rag-demo/jst-rag-demo/indexes/bm25_ctrl \
   --strip-html
 ```
 
 检索
 ```bash
 # 实验组
-python3 /home/wangyaqi/jst/search.py \
+python3 /Users/wangyaqi/Documents/cursor_project/jst-rag-demo/jst-rag-demo/search.py \
   --variant exp \
-  --faiss-dir /home/wangyaqi/jst/indexes/faiss_exp \
-  --bm25-dir  /home/wangyaqi/jst/indexes/bm25_exp \
+  --faiss-dir /Users/wangyaqi/Documents/cursor_project/jst-rag-demo/jst-rag-demo/indexes/faiss_exp \
+  --bm25-dir  /Users/wangyaqi/Documents/cursor_project/jst-rag-demo/jst-rag-demo/indexes/bm25_exp \
   --query "募投项目 调整后金额" --topk 10
 
 
@@ -67,11 +67,11 @@ rag框架
 -先对文件进行年份分类
 命令：
 python3 -m registry.build_from_indexes \
-    --faiss-root /home/wangyaqi/jst/金盘财报_indexes/faiss_exp \
-    --faiss-root /home/wangyaqi/jst/金盘上市公告_indexes/faiss_exp \
-    --bm25-root  /home/wangyaqi/jst/金盘财报_indexes/bm25_exp \
-    --bm25-root  /home/wangyaqi/jst/金盘上市公告_indexes/bm25_exp \
-    --out-dir /home/wangyaqi/jst/registry
+    --faiss-root /Users/wangyaqi/Documents/cursor_project/jst-rag-demo/jst-rag-demo/金盘财报_indexes/faiss_exp \
+    --faiss-root /Users/wangyaqi/Documents/cursor_project/jst-rag-demo/jst-rag-demo/金盘上市公告_indexes/faiss_exp \
+    --bm25-root  /Users/wangyaqi/Documents/cursor_project/jst-rag-demo/jst-rag-demo/金盘财报_indexes/bm25_exp \
+    --bm25-root  /Users/wangyaqi/Documents/cursor_project/jst-rag-demo/jst-rag-demo/金盘上市公告_indexes/bm25_exp \
+    --out-dir /Users/wangyaqi/Documents/cursor_project/jst-rag-demo/jst-rag-demo/registry
 
 1.ocr
 模型：新mineru
@@ -89,21 +89,21 @@ type类型：text,table,page_number,image,list,equation,header
 如果包含，则走大模型进行文本化，将表格信息处理为行级文本
 输入：金盘上市公告_mineru解析
 输出：金盘上市公告_table2text
-命令：python /home/wangyaqi/jst/textify_tables.py "/home/wangyaqi/jst/金盘公告_mineru解析"
+命令：python /Users/wangyaqi/Documents/cursor_project/jst-rag-demo/jst-rag-demo/textify_tables.py "/Users/wangyaqi/Documents/cursor_project/jst-rag-demo/jst-rag-demo/金盘公告_mineru解析"
 
 
 财报类：
 对公告类类似，但是在表格中用大模型注入时间
 输入：金盘财报_mineru解析
 输出：金盘财报_table2text
-命令：python /home/wangyaqi/jst/textify_tables_llm.py "/home/wangyaqi/jst/金盘财报_mineru解析"
+命令：python /Users/wangyaqi/Documents/cursor_project/jst-rag-demo/jst-rag-demo/textify_tables_llm.py "/Users/wangyaqi/Documents/cursor_project/jst-rag-demo/jst-rag-demo/金盘财报_mineru解析"
 
 
 3.chunking
 实验组：
 对text类型，进行固定长度切分；去掉header类型；对table类型，按table2text进行行级切分；
-财报：python /home/wangyaqi/jst/chunk_content.py "/home/wangyaqi/jst/金盘财报_table2text" --mode exp --out-dir "/home/wangyaqi/jst/金盘财报_chunks"
-公告：python /home/wangyaqi/jst/chunk_content.py "/home/wangyaqi/jst/金盘上市 公告_table2text" --mode exp --out-dir "/home/wangyaqi/jst/金盘上市公告_chunks"
+财报：python /Users/wangyaqi/Documents/cursor_project/jst-rag-demo/jst-rag-demo/chunk_content.py "/Users/wangyaqi/Documents/cursor_project/jst-rag-demo/jst-rag-demo/金盘财报_table2text" --mode exp --out-dir "/Users/wangyaqi/Documents/cursor_project/jst-rag-demo/jst-rag-demo/金盘财报_chunks"
+公告：python /Users/wangyaqi/Documents/cursor_project/jst-rag-demo/jst-rag-demo/chunk_content.py "/Users/wangyaqi/Documents/cursor_project/jst-rag-demo/jst-rag-demo/金盘上市 公告_table2text" --mode exp --out-dir "/Users/wangyaqi/Documents/cursor_project/jst-rag-demo/jst-rag-demo/金盘上市公告_chunks"
 
 
 
@@ -118,7 +118,7 @@ reranking
 在现有框架中增加multi-query和hyde，但效果不理想
 
 命令：
-python3 /home/wangyaqi/jst/search.py   --kb 财报   --query "2021年第一季度公司总资产是多少？"   --pre-topk 30   --rerank-topk 10   --faiss-per-index 10   --bm25-per-index 50   --alpha 0.5   --neighbor-radius 1   --return-table-full
+python3 /Users/wangyaqi/Documents/cursor_project/jst-rag-demo/jst-rag-demo/search.py   --kb 财报   --query "2021年第一季度公司总资产是多少？"   --pre-topk 30   --rerank-topk 10   --faiss-per-index 10   --bm25-per-index 50   --alpha 0.5   --neighbor-radius 1   --return-table-full
 
 6.generate
 检索到表格，则返回原整个表格及其上下文chunk

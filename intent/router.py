@@ -3,13 +3,12 @@ from __future__ import annotations
 import json
 import os
 from typing import Any, Dict, List, Optional, Tuple
-from .intent_schema import QueryIntent, SubQuestion, RoutingDecision, Trace, TokenStats
+from .intent_schema import QueryIntent, RoutingDecision, Trace, TokenStats
 from .intent_rules import (
-    detect_complexity_and_split,
     classify_doc_type,
     extract_years_and_quarters,
 )
-from .intent_llm import llm_rewrite_and_split, llm_type_disambiguation, LLMCaller
+from .intent_llm import llm_extract_metadata
 
 
 def _project_root() -> str:
@@ -40,104 +39,74 @@ def load_doc_registry() -> Dict[str, Any]:
 def analyze_intent(
     text: str,
     use_llm: bool = True,
-    llm_caller: Optional[LLMCaller] = None,
 ) -> Tuple[QueryIntent, Trace]:
     trace = Trace()
-    # rules: complexity/split
-    t0 = trace.begin_stage("rules.detect_complexity")
-    rules_ext = detect_complexity_and_split(text)
-    trace.end_stage(
-        "rules.detect_complexity",
-        t0,
-        {
-            "is_complex_rules": bool(rules_ext.get("is_complex")),
-            "rules": rules_ext,
-        },
-    )
+    
+    years: List[int] = []
+    doc_type: Optional[str] = None
+    confidence: float = 0.0
 
-    # rules: doc_type
-    t0 = trace.begin_stage("rules.classify_doc_type")
-    r_type, r_conf = classify_doc_type(text)
-    trace.end_stage("rules.classify_doc_type", t0, {"doc_type": r_type, "conf": r_conf})
+    llm_success = False
 
-    # init from rules (years and quarters already extracted in detect_complexity_and_split)
-    is_complex = bool(rules_ext.get("is_complex"))
-    rewrite = str(rules_ext.get("rewrite") or text)
-    subqs_rules = rules_ext.get("sub_questions") or []
-    years = rules_ext.get("years") or []
-    quarters = rules_ext.get("quarters") or []
-    doc_type = r_type if r_type != "unknown" else None
-    confidence = float(r_conf or 0.0)
+    # 1. Try LLM extraction first if enabled
+    if use_llm:
+        t0 = trace.begin_stage("llm.extract_metadata")
+        # No caller needed anymore
+        out = llm_extract_metadata(text)
+        llm_error = out.get("error", False)
+        
+        trace.end_stage(
+            "llm.extract_metadata",
+            t0,
+            {"years": out.get("years"), "doc_type": out.get("doc_type"), "error": llm_error},
+            tokens=TokenStats.from_dict(out.get("tokens") or {}),
+        )
 
-    # LLM enhancement - temporarily disabled
-    # if use_llm:
-    #     t0 = trace.begin_stage("llm.rewrite_and_split")
-    #     out = llm_rewrite_and_split(text, caller=llm_caller)
-    #     rewrite = out.get("rewrite", rewrite) or rewrite
-    #     llm_subqs = out.get("subqs", []) or []
-    #     trace.end_stage(
-    #         "llm.rewrite_and_split",
-    #         t0,
-    #         {"rewrite": rewrite, "subqs": llm_subqs},
-    #         tokens=TokenStats.from_dict(out.get("tokens") or {}),
-    #     )
-    #     # merge sub-questions: prefer LLM if produced
-    #     if llm_subqs:
-    #         subqs_rules = llm_subqs
+        if not llm_error:
+            # LLM success: use its results
+            llm_years = out.get("years", [])
+            llm_type = out.get("doc_type", "unknown")
+            
+            years = llm_years
+            if llm_type in {"report", "notice"}:
+                doc_type = llm_type
+                confidence = 0.9 # High confidence for successful LLM parse
+            else:
+                doc_type = None # Unknown
+            
+            llm_success = True
 
-    #     # LLM type disambiguation if rules unclear
-    #     need_type_llm = (doc_type is None) or (confidence < 0.6)
-    #     if need_type_llm:
-    #         t0 = trace.begin_stage("llm.type_disambiguation")
-    #         tout = llm_type_disambiguation(text, caller=llm_caller)
-    #         t_type = tout.get("type", "unknown")
-    #         t_prob = float(tout.get("prob", 0.0))
-    #         trace.end_stage(
-    #             "llm.type_disambiguation",
-    #             t0,
-    #             {"type": t_type, "prob": t_prob},
-    #             tokens=TokenStats.from_dict(tout.get("tokens") or {}),
-    #         )
-    #         if t_type in {"report", "notice"} and t_prob >= confidence:
-    #             doc_type = t_type
-    #             confidence = t_prob
+    # 2. If LLM failed (or disabled), fallback to Rules
+    if not llm_success:
+        # Rules: Year extraction
+        t0 = trace.begin_stage("rules.extract_years")
+        years_ext = extract_years_and_quarters(text)
+        years = years_ext.get("years", [])
+        trace.end_stage("rules.extract_years", t0, {"years": years})
 
-    # finalize sub_questions objects
-    sub_questions: List[SubQuestion] = []
-    if subqs_rules:
-        for sq in subqs_rules:
-            if not isinstance(sq, dict):
-                continue
-            ys = sq.get("years") or []
-            sub_questions.append(
-                SubQuestion(
-                    text=str(sq.get("text", "")),
-                    doc_type=sq.get("doc_type") if sq.get("doc_type") in {"report", "notice"} else None,
-                    years=[int(y) for y in ys if isinstance(y, (int, str))],
-                )
-            )
+        # Rules: Doc type
+        t0 = trace.begin_stage("rules.classify_doc_type")
+        r_type, r_conf = classify_doc_type(text)
+        trace.end_stage("rules.classify_doc_type", t0, {"doc_type": r_type, "conf": r_conf})
 
-    final_is_complex = is_complex or bool(sub_questions)
+        doc_type = r_type if r_type != "unknown" else None
+        confidence = float(r_conf or 0.0)
+
     intent = QueryIntent(
-        is_complex=final_is_complex,
-        rewrite=rewrite,
-        sub_questions=sub_questions,
         doc_type=doc_type,  # type: ignore
         years=[int(y) for y in years if isinstance(y, (int, str))],
         confidence=confidence,
         routing=None,
     )
-    # record finalized intent complexity to avoid confusion with rules stage output
+    
     t1 = trace.begin_stage("intent.finalize")
     trace.end_stage(
         "intent.finalize",
         t1,
         {
-            "is_complex": final_is_complex,
-            "sources": {
-                "rules_is_complex": bool(rules_ext.get("is_complex")),
-                "rules_sub_questions": len(sub_questions),
-            },
+            "doc_type": doc_type,
+            "years": years,
+            "source": "llm" if llm_success else "rules"
         },
     )
     return intent, trace
@@ -152,26 +121,32 @@ def _resolve_indices_by_years(
     if not reg:
         return paths
     by_ty = (reg.get("faiss") or {}).get("by_type_year") or {}
+    # 辅助：添加路径并去重
+    def _add(p_list):
+        for p in p_list or []:
+            if p not in paths:
+                paths.append(p)
+
     if doc_type and doc_type in by_ty:
-        # exact years
-        for y in years or []:
-            ykey = str(y)
-            for p in by_ty[doc_type].get(ykey, []) or []:
-                if p not in paths:
-                    paths.append(p)
-        # fallback to unknown year if no hit
-        if not paths and "unknown" in by_ty[doc_type]:
-            for p in by_ty[doc_type]["unknown"]:
-                if p not in paths:
-                    paths.append(p)
+        if years:
+            # 指定了年份：精确匹配
+            for y in years:
+                ykey = str(y)
+                _add(by_ty[doc_type].get(ykey))
+            # 兜底：如果指定年份没找到，尝试 unknown 桶
+            if not paths:
+                _add(by_ty[doc_type].get("unknown"))
+        else:
+            # 【优化】未指定年份：包含该类型下所有年份的索引
+            for ykey in by_ty[doc_type]:
+                _add(by_ty[doc_type][ykey])
     else:
-        # unknown doc_type: include both types for years
+        # 类型未知：现有逻辑保持不变（或也可改为全选）
         for ty in by_ty.keys():
             for y in years or []:
                 ykey = str(y)
-                for p in by_ty[ty].get(ykey, []) or []:
-                    if p not in paths:
-                        paths.append(p)
+                _add(by_ty[ty].get(ykey))
+                
     return paths
 
 
@@ -206,12 +181,12 @@ def route_and_search(
     k: int = 8,
     prefer_year: bool = True,
     use_llm: bool = True,
-    llm_caller: Optional[LLMCaller] = None,
 ) -> Dict[str, Any]:
     """
     End-to-end: analyze -> route -> (search TBD, to be integrated in search.py) -> return intent + placeholder answers.
     """
-    intent, trace = analyze_intent(text, use_llm=use_llm, llm_caller=llm_caller)
+    # Removed llm_caller
+    intent, trace = analyze_intent(text, use_llm=use_llm)
     t0 = trace.begin_stage("router.select_indices")
     routing = route_indices(intent, prefer_year=prefer_year)
     intent.routing = routing
@@ -222,5 +197,3 @@ def route_and_search(
         "answers": [],
         "trace": trace.to_dict(),
     }
-
-

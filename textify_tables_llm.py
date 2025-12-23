@@ -351,7 +351,7 @@ def _orig_output_name(input_path: str) -> str:
 
 def main(argv: List[str]) -> int:
     global _LOG_COLLECTOR
-    DEFAULT_OUTPUT_DIR = os.path.abspath("/home/wangyaqi/jst/金盘财报_table2text")
+    DEFAULT_OUTPUT_DIR = os.path.abspath("/Users/wangyaqi/Documents/cursor_project/jst-rag-demo/jst-rag-demo/金盘财报_table2text")
     if len(argv) < 2:
         _log("用法: python textify_tables_llm.py <输入文件或目录> [输出目录]")
         _log("  - 输入为文件: 生成 <输入>.textified.json 于同目录，同时写入 <输入>.textified.md")

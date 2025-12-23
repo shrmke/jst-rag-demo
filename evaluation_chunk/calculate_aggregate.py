@@ -4,7 +4,7 @@ import argparse
 from typing import Dict, Any
 
 # Configuration matching run_evaluation.py
-OUTPUT_ROOT = "/home/wangyaqi/jst/evaluation_chunk/output"
+OUTPUT_ROOT = "/Users/wangyaqi/Documents/cursor_project/jst-rag-demo/jst-rag-demo/evaluation_chunk/output"
 DEFAULT_REPORT_PATH = os.path.join(OUTPUT_ROOT, "evaluation_report.jsonl")
 
 def calculate_weighted_aggregate(report_path: str = DEFAULT_REPORT_PATH):
