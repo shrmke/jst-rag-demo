@@ -1,5 +1,5 @@
 from __future__ import annotations
-
+import sys
 import json
 import os
 from typing import Any, Dict, List, Optional, Tuple
@@ -116,37 +116,74 @@ def _resolve_indices_by_years(
     doc_type: Optional[str],
     years: List[int],
 ) -> List[str]:
+    print(f"-------- [router resolve] --------\n{doc_type}\n{years}\n--------------------------------------", file=sys.stderr, flush=True)
     reg = load_index_registry()
     paths: List[str] = []
     if not reg:
         return paths
     by_ty = (reg.get("faiss") or {}).get("by_type_year") or {}
+    
     # 辅助：添加路径并去重
     def _add(p_list):
+        print(f"-------- [router resolve1.1] --------\n{p_list}\n--------------------------------------", file=sys.stderr, flush=True)
         for p in p_list or []:
             if p not in paths:
                 paths.append(p)
-
-    if doc_type and doc_type in by_ty:
-        if years:
-            # 指定了年份：精确匹配
-            for y in years:
-                ykey = str(y)
-                _add(by_ty[doc_type].get(ykey))
-            # 兜底：如果指定年份没找到，尝试 unknown 桶
-            if not paths:
-                _add(by_ty[doc_type].get("unknown"))
+    
+    # 检查年份是否有效（在注册表中是否存在）
+    def _is_year_valid(year: int, type_dict: Dict[str, Any]) -> bool:
+        """检查指定年份在类型字典中是否存在"""
+        ykey = str(year)
+        return ykey in type_dict
+    
+    # 检查是否有有效的年份
+    valid_years = []
+    if years:
+        # 如果有指定类型，检查该类型下的年份有效性
+        if doc_type and doc_type in by_ty:
+            valid_years = [y for y in years if _is_year_valid(y, by_ty[doc_type])]
         else:
-            # 【优化】未指定年份：包含该类型下所有年份的索引
-            for ykey in by_ty[doc_type]:
-                _add(by_ty[doc_type][ykey])
-    else:
-        # 类型未知：现有逻辑保持不变（或也可改为全选）
+            # 如果没有指定类型，检查所有类型下是否有该年份
+            valid_years = []
+            for ty in by_ty.keys():
+                for y in years:
+                    if _is_year_valid(y, by_ty[ty]) and y not in valid_years:
+                        valid_years.append(y)
+    
+    has_valid_years = len(valid_years) > 0
+    has_type = doc_type and doc_type in by_ty
+    
+    print(f"-------- [router resolve debug] --------\nhas_type={has_type}, has_valid_years={has_valid_years}, valid_years={valid_years}\n--------------------------------------", file=sys.stderr, flush=True)
+    
+    # 情况1: 类型和年份都有，且年份有效 → 返回交集
+    if has_type and has_valid_years:
+        print("-------- [router resolve case1] 类型+有效年份：返回交集 --------", file=sys.stderr, flush=True)
+        for y in valid_years:
+            ykey = str(y)
+            _add(by_ty[doc_type].get(ykey))
+    
+# 情况2: 只有类型，没有年份或年份无效 → 放弃类型，返回所有文件
+    elif has_type and not has_valid_years:
+        print("-------- [router resolve case2] 只有类型（年份无效或未指定）：放弃类型，返回所有文件 --------", file=sys.stderr, flush=True)
         for ty in by_ty.keys():
-            for y in years or []:
+            for ykey in by_ty[ty]:
+                _add(by_ty[ty][ykey])
+    
+    # 情况3: 只有年份（有效），没有类型 → 返回该年份下所有类型
+    elif not has_type and has_valid_years:
+        print("-------- [router resolve case3] 只有有效年份（无类型）：返回该年份下所有类型 --------", file=sys.stderr, flush=True)
+        for ty in by_ty.keys():
+            for y in valid_years:
                 ykey = str(y)
                 _add(by_ty[ty].get(ykey))
-                
+    
+    # 情况4: 都没有 → 返回所有文件
+    else:
+        print("-------- [router resolve case4] 都没有：返回所有文件 --------", file=sys.stderr, flush=True)
+        for ty in by_ty.keys():
+            for ykey in by_ty[ty]:
+                _add(by_ty[ty][ykey])
+    
     return paths
 
 

@@ -114,8 +114,11 @@ def llm_extract_metadata(
 今年是 {current_year}年
 
 请提取以下维度的过滤条件（如果用户未提及，则不要包含该字段）：
-1. years (List[int]): 具体的年份列表。请将"今年"、"去年"、"前年"等相对时间转换为具体的四位数字年份。如果是范围，请列出范围内的所有年份。如果无法识别或未提及年份，请返回空列表 []。
-2. category (str): 判断查询的信息来源，例如如果询问某财务数额，那么信息来源为"report",否则请返回"unknown"。
+1. years (List[int]): 提取查询中出现的所有年份，包括数据所属年份和信息来源文档的所属年份。如果是范围，请列出范围内的所有年份。如果无法识别或未提及年份，请返回空列表 []。
+2. category (str): 判断查询的信息来源，分以下三种情况：
+（1）如果查询中指明根据财报，年报，季报等财报信息查询，那么信息来源为"report"；
+（2）如果查询中指明根据其他信息查询，比如公告，招股说明书，那么信息来源为"notice"；
+（3）当查询中没有指定信息来源时，如果查询某金融财务类数值，那么判断信息来源为"report"，否则信息来源为"unknown"。
 
 请直接返回 JSON 格式结果，不要包含任何 Markdown 格式或额外解释。
 JSON 格式示例:
@@ -166,6 +169,8 @@ JSON 格式示例:
         cat = str(filters.get("category", "unknown")).lower().strip()
         if cat == "report":
             doc_type = "report"
+        elif cat == "notice":
+            doc_type = "notice"
         else:
             doc_type = "unknown"
             

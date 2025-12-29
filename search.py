@@ -761,24 +761,24 @@ def route_and_search(
     log_print(f"-------- [Bm25 Dirs] -------- {bm25_dirs}")
     # log_print(f"-------- [Faiss Hits] -------- {faiss_hits}")
     # log_print(f"-------- [Bm25 Hits] -------- {bm25_hits}")
-    log_print("-------- [FAISS Candidates] --------")
-    faiss_candidates = [c for c in candidates if c["modal"] == "faiss"]
-    if faiss_candidates:
-        faiss_candidates.sort(key=lambda x: x['score_norm'], reverse=True)
-        for i, c in enumerate(faiss_candidates):
-            log_print(f"  [{i+1}] rid={c['rid']}, raw={c['score_raw']:.6f}, norm={c['score_norm']:.6f}, dir={c['dir']},content={c['meta'].get('raw_content')}")
-    else:
-        log_print("  (no faiss candidates)")
+    # log_print("-------- [FAISS Candidates] --------")
+    # faiss_candidates = [c for c in candidates if c["modal"] == "faiss"]
+    # if faiss_candidates:
+    #     faiss_candidates.sort(key=lambda x: x['score_norm'], reverse=True)
+    #     for i, c in enumerate(faiss_candidates):
+    #         log_print(f"  [{i+1}] rid={c['rid']}, raw={c['score_raw']:.6f}, norm={c['score_norm']:.6f}, dir={c['dir']},content={c['meta'].get('raw_content')}")
+    # else:
+    #     log_print("  (no faiss candidates)")
     
-    log_print("-------- [BM25 Candidates] --------")
-    bm25_candidates = [c for c in candidates if c["modal"] == "bm25"]
-    if bm25_candidates:
-        bm25_candidates.sort(key=lambda x: x['score_norm'], reverse=True)
-        for i, c in enumerate(bm25_candidates):
-            log_print(f"  [{i+1}] rid={c['rid']}, raw={c['score_raw']:.6f}, norm={c['score_norm']:.6f}, dir={c['dir']},content={c['meta'].get('raw_content')}")
-    else:
-        log_print("  (no bm25 candidates)")
-    log_print("------------------------------------")
+    # log_print("-------- [BM25 Candidates] --------")
+    # bm25_candidates = [c for c in candidates if c["modal"] == "bm25"]
+    # if bm25_candidates:
+    #     bm25_candidates.sort(key=lambda x: x['score_norm'], reverse=True)
+    #     for i, c in enumerate(bm25_candidates):
+    #         log_print(f"  [{i+1}] rid={c['rid']}, raw={c['score_raw']:.6f}, norm={c['score_norm']:.6f}, dir={c['dir']},content={c['meta'].get('raw_content')}")
+    # else:
+    #     log_print("  (no bm25 candidates)")
+    # log_print("------------------------------------")
 
     
     # for c in candidates:
@@ -828,10 +828,10 @@ def route_and_search(
         rrf_score = 0.0
         # 如果文档在 faiss 中，加上 faiss 的 RRF 贡献
         if doc_key in faiss_ranks:
-            rrf_score += 1.0 / (rrf_k + faiss_ranks[doc_key])
+            rrf_score += (1.0 - alpha) / (rrf_k + faiss_ranks[doc_key])
         # 如果文档在 bm25 中，加上 bm25 的 RRF 贡献
         if doc_key in bm25_ranks:
-            rrf_score += 1.0 / (rrf_k + bm25_ranks[doc_key])
+            rrf_score += alpha / (rrf_k + bm25_ranks[doc_key])
         rrf_scores[doc_key] = rrf_score
     
     # 5. 为每个候选文档添加 RRF 分数，并去重（同一文档可能同时出现在 faiss 和 bm25 中）
@@ -860,7 +860,10 @@ def route_and_search(
     log_print("------------------------------ [final Candidates] ------------------------------")
     if candidates:
         for i, c in enumerate(candidates):
-            log_print(f"  [{i+1}] rid={c['rid']}, score_blend={c['score_blend']:.6f},norm={c['score_norm']:.6f}, modal={c['modal']},dir={c['dir']},content={c['meta'].get('raw_content')}")
+            if i<30:
+                log_print(f"  [{i+1}] rid={c['rid']}, score_blend={c['score_blend']:.6f},norm={c['score_norm']:.6f}, modal={c['modal']},dir={c['dir']},content={c['meta'].get('raw_content')}")
+            else:
+                break
 
     # 4. Table Dedup (Logic: Keep first occurrence of any table_id)
     deduped_candidates: List[Dict[str, Any]] = []
